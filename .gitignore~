@@ -11,14 +11,3 @@ dist-newstyle/
 # Editor files
 *.swp
 .DS_Store
-
-# Python venvs
-venv/
-venv*/
-.venv/
-env/
-
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
