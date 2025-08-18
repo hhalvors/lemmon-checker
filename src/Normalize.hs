@@ -6,8 +6,9 @@ import Data.Char (toLower, isSpace, isAlphaNum)
 normalizeSyntax :: String -> String
 normalizeSyntax =
       repl "\\/"  "∨"
-    . repl "v"  "∨"  
+    . repl "v"    "∨"  
     . repl "/\\"  "∧"
+    . repl "&"    "∧"
     . repl "->"   "→"
     . repl "=>"   "→"
     . repl "~"    "¬"
