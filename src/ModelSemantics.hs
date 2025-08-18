@@ -1,5 +1,6 @@
+-- src/ModelSemantics.hs
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections     #-}
 
 module ModelSemantics
   ( Entity
@@ -9,7 +10,6 @@ module ModelSemantics
   , assign
   , interpretConst
   , interpretPred
-  , interpretProp
   , fromTuples
   , eval
   , evalClosed
@@ -23,17 +23,16 @@ import           Data.Set        (Set)
 import qualified Data.Set        as S
 import           Data.Maybe      (fromMaybe)
 import           Control.Monad   (foldM)
-
--- JSON
 import qualified Data.Aeson      as A
-import           Data.Aeson      ((.=), (.:))
+import           Data.Aeson      ((.=))  -- we’ll qualify the rest as A..:
+import           Data.Char       (isLower)
 
 -- ──────────────────────────────────────────────────────────────────────────────
 -- Core types
 -- ──────────────────────────────────────────────────────────────────────────────
 
 type Entity = String
-type PredKey = (String, Int)     -- (predicate name, arity)
+type PredKey = (String, Int)
 type VAssign = Map String Entity
 
 emptyAssign :: VAssign
@@ -42,50 +41,56 @@ emptyAssign = M.empty
 assign :: String -> Entity -> VAssign -> VAssign
 assign = M.insert
 
+-- All predicates (including arity 0 for propositional constants) live here.
 data Model = Model
   { domain      :: Set Entity
   , constInterp :: Map String Entity
-  , predInterp  :: Map PredKey (Set [Entity])  -- relations, including unary F,G
-  , propInterp  :: Map String Bool             -- 0-ary predicates (propositional constants), e.g., P
+  , predInterp  :: Map PredKey (Set [Entity])  -- 0-ary: [] ∈ rel means True
   } deriving (Show, Eq)
 
 -- ──────────────────────────────────────────────────────────────────────────────
--- Aeson instances for convenient JSON IO (used by /model/check)
+-- JSON instances
+--   - We emit only predInterp (arity 0 encodes props).
+--   - We also ACCEPT legacy "propInterp" on input and merge it into predInterp.
 -- ──────────────────────────────────────────────────────────────────────────────
 
 instance A.ToJSON Model where
-  toJSON (Model d c p props) =
+  toJSON (Model d c p) =
     A.object
       [ "domain"      .= S.toList d
       , "constInterp" .= c
       , "predInterp"  .=
-          [ A.object
-              [ "name"   .= n
-              , "arity"  .= k
-              , "tuples" .= S.toList rel
-              ]
-          | ((n, k), rel) <- M.toList p
+          [ A.object [ "name"   .= n
+                     , "arity"  .= k
+                     , "tuples" .= S.toList rel
+                     ]
+          | ((n,k), rel) <- M.toList p
           ]
-      , "propInterp"  .= props
       ]
 
 instance A.FromJSON Model where
   parseJSON = A.withObject "Model" $ \o -> do
-    d     <- S.fromList <$> o .: "domain"
-    c     <- o .: "constInterp"
-    ps    <- o .: "predInterp"
-    props <- o .: "propInterp"
-    p     <- M.fromList <$> mapM parsePred ps
-    pure (Model d c p props)
+    d       <- S.fromList <$> (o A..:  "domain")
+    c       <-                (o A..:  "constInterp")
+    ps      <-                (o A..:  "predInterp")
+    propsMb <-                (o A..:? "propInterp" A..!= (M.empty :: Map String Bool))
+    pPairs  <- mapM parsePred ps
+    let pRel = M.fromList pPairs
+        propPairs =
+          [ ((name, 0), if b then S.singleton [] else S.empty)
+          | (name, b) <- M.toList propsMb
+          ]
+        pAll = M.union pRel (M.fromList propPairs)
+    pure (Model d c pAll)
     where
       parsePred = A.withObject "PredRelation" $ \p -> do
-        n   <- p .: "name"
-        k   <- p .: "arity"
-        tup <- S.fromList <$> p .: "tuples"
+        n   <- p A..: "name"
+        k   <- p A..: "arity"
+        tup <- S.fromList <$> (p A..: "tuples")
         pure ((n, k), tup)
 
 -- ──────────────────────────────────────────────────────────────────────────────
--- Helpers for building interpretations
+-- Helpers to build interpretations
 -- ──────────────────────────────────────────────────────────────────────────────
 
 interpretConst :: Model -> String -> Either String Entity
@@ -94,21 +99,18 @@ interpretConst m c =
     Just v  -> Right v
     Nothing -> Left $ "Uninterpreted constant: " ++ show c
 
--- STRICT lookup: error if a predicate is uninterpreted
+-- STRICT lookup: error if the predicate symbol/arity is absent
 interpretPred :: Model -> String -> Int -> Either String (Set [Entity])
 interpretPred m p k =
   case M.lookup (p,k) (predInterp m) of
     Just rel -> Right rel
-    Nothing  -> Left $ "Uninterpreted predicate: " ++ p ++ "/" ++ show k    
-
-interpretProp :: Model -> String -> Maybe Bool
-interpretProp m name = M.lookup name (propInterp m)
+    Nothing  -> Left $ "Uninterpreted predicate: " ++ p ++ "/" ++ show k
 
 fromTuples :: [[Entity]] -> Set [Entity]
 fromTuples = S.fromList
 
 -- ──────────────────────────────────────────────────────────────────────────────
--- Free variables
+-- Free variables (for evalClosed diagnostics)
 -- ──────────────────────────────────────────────────────────────────────────────
 
 freeVars :: PredFormula -> Set String
@@ -139,38 +141,45 @@ evalTerm m _   (Const c) = interpretConst m c
 -- ──────────────────────────────────────────────────────────────────────────────
 
 eval :: Model -> VAssign -> PredFormula -> Either String Bool
-eval _ _   (Boolean b)           = Right b
+eval _ _   (Boolean b)         = Right b
+
+-- Predicates: for arity 0, we check [] ∈ relation (true) / ∉ (false)
 eval m asg (Predicate name ts) = do
-  vs  <- mapM (evalTerm m asg) ts              -- evaluate each term
-  rel <- interpretPred m name (length ts)      -- STRICT lookup (Either)
-  pure (vs `S.member` rel)                     -- [] ∈ rel handles 0-ary
+  vs  <- mapM (evalTerm m asg) ts
+  rel <- interpretPred m name (length ts)  -- strict lookup
+  pure (vs `S.member` rel)
 
 eval m asg (Not φ)        = not <$> eval m asg φ
 eval m asg (And φ ψ)      = (&&) <$> eval m asg φ <*> eval m asg ψ
 eval m asg (Or  φ ψ)      = (||) <$> eval m asg φ <*> eval m asg ψ
-eval m asg (Implies φ ψ)  = (impl) <$> eval m asg φ <*> eval m asg ψ
+eval m asg (Implies φ ψ)  = impl <$> eval m asg φ <*> eval m asg ψ
   where impl a b = (not a) || b
-eval m asg (ForAll x φ)   = do
+
+eval m asg (ForAll x φ) = do
   let d = S.toList (domain m)
   if null d
      then Left "Empty domain: ∀ has no witnesses."
      else allM (\v -> eval m (assign x v asg) φ) d
-eval m asg (Exists x φ)   = do
+
+eval m asg (Exists x φ) = do
   let d = S.toList (domain m)
   if null d
      then Left "Empty domain: ∃ has no witnesses."
      else anyM (\v -> eval m (assign x v asg) φ) d
 
+-- Closed sentences only (otherwise a helpful error)
 evalClosed :: Model -> PredFormula -> Either String Bool
 evalClosed m φ =
   if S.null (freeVars φ)
     then eval m emptyAssign φ
     else Left $ "Formula is not closed; free variables: " ++ show (S.toList (freeVars φ))
 
--- small Either helpers
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Small Either helpers
+-- ──────────────────────────────────────────────────────────────────────────────
+
 allM :: (a -> Either String Bool) -> [a] -> Either String Bool
 allM p = foldM (\acc x -> if acc then p x else pure False) True
 
 anyM :: (a -> Either String Bool) -> [a] -> Either String Bool
 anyM p = foldM (\acc x -> if acc then pure True else p x) False
-
