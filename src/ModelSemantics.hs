@@ -50,7 +50,7 @@ data Model = Model
 
 -- ──────────────────────────────────────────────────────────────────────────────
 -- JSON instances
---   - We emit only predInterp (arity 0 encodes props).
+--d   - We emit only predInterp (arity 0 encodes props).
 --   - We also ACCEPT legacy "propInterp" on input and merge it into predInterp.
 -- ──────────────────────────────────────────────────────────────────────────────
 
