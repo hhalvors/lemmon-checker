@@ -1,0 +1,136 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>lemmon-checker — Model checker</title>
+<style>
+  body{font-family:system-ui,Segoe UI,Arial;margin:2rem;max-width:900px}
+  .row{display:flex;gap:1rem;flex-wrap:wrap}
+  .card{border:1px solid #ddd;border-radius:10px;padding:1rem;flex:1;min-width:280px}
+  textarea, input, select { width:100%; font-family:ui-monospace,Menlo,Consolas,monospace; }
+  textarea{height:8rem}
+  button{padding:.5rem 1rem}
+  .ok{color:#167d36;font-weight:600}
+  .bad{color:#b00020;font-weight:600}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+</style>
+
+<h1>Model checker (β: R-only MVP)</h1>
+
+<p>Build a finite model and test whether a closed sentence is true in it.</p>
+
+<div class="row">
+  <div class="card">
+    <h3>Domain</h3>
+    <label>Elements (comma-separated):</label>
+    <input id="domain" placeholder="a,b,c" value="a,b"/>
+    <p class="mono">Example: <code>a,b,c</code></p>
+  </div>
+
+  <div class="card">
+    <h3>Constants</h3>
+    <label>Map constants to elements (one per line):</label>
+    <textarea id="consts" placeholder="a = a0&#10;b = b0"></textarea>
+    <p class="mono">Format: <code>c = a</code> (left is constant symbol, right is domain element). Leave blank if none.</p>
+  </div>
+
+  <div class="card">
+    <h3>Binary relation R</h3>
+    <label>Edges (one pair per line):</label>
+    <textarea id="edges" placeholder="a b&#10;b a"></textarea>
+    <p class="mono">Each line: <code>u v</code> meaning R(u,v) is true.</p>
+  </div>
+</div>
+
+<div class="card" style="margin-top:1rem">
+  <h3>Sentence</h3>
+  <textarea id="sentence" placeholder="∀x(∃y Rxy)"></textarea>
+  <label class="mono">Class code (optional): <input id="code" placeholder=""></label>
+  <br/><br/>
+  <button id="run">Check</button>
+  <span id="spinner" style="display:none">Checking…</span>
+  <div id="out"></div>
+</div>
+
+<p><a href="/">← back to proof checker</a></p>
+
+<script>
+function parseListCSV(s) {
+  return s.split(",").map(x => x.trim()).filter(Boolean);
+}
+function parseConsts(text) {
+  const m = {};
+  for (const line of text.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    const parts = t.split("=");
+    if (parts.length !== 2) throw new Error("Bad constant mapping line: " + line);
+    const c = parts[0].trim();
+    const v = parts[1].trim();
+    if (!c || !v) throw new Error("Bad constant mapping line: " + line);
+    m[c] = v;
+  }
+  return m;
+}
+function parseEdges(text) {
+  const tuples = [];
+  for (const line of text.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    const parts = t.split(/\s+/);
+    if (parts.length !== 2) throw new Error("Each edge must be two symbols: " + line);
+    tuples.push(parts);
+  }
+  return tuples;
+}
+
+const runBtn  = document.getElementById("run");
+const spinner = document.getElementById("spinner");
+const out     = document.getElementById("out");
+
+runBtn.addEventListener("click", async () => {
+  out.innerHTML = "";
+  spinner.style.display = "inline";
+  try {
+    const domain = parseListCSV(document.getElementById("domain").value);
+    if (domain.length === 0) throw new Error("Domain must not be empty.");
+    const consts = parseConsts(document.getElementById("consts").value);
+    const edges  = parseEdges(document.getElementById("edges").value);
+    const phi    = document.getElementById("sentence").value.trim();
+    if (!phi) throw new Error("Please enter a sentence.");
+
+    // Build Model JSON for server
+    const model = {
+      domain: domain,
+      constInterp: consts,
+      predInterp: [
+        { name: "R", arity: 2, tuples: edges }
+      ]
+    };
+
+    const payload = {
+      model: model,
+      sentenceText: phi
+    };
+
+    const headers = { "Content-Type": "application/json" };
+    const code = document.getElementById("code").value.trim();
+    if (code) headers["X-Class-Code"] = code;
+
+    const res = await fetch("/model/check", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    if (data.status === "ok") {
+      out.innerHTML = `<p>Result: ${data.value ? '<span class="ok">TRUE</span>' : '<span class="bad">FALSE</span>'}</p>`;
+    } else {
+      out.innerHTML = `<p class="bad">${data.status}: ${data.error || 'Unknown error'}</p>`;
+    }
+  } catch (e) {
+    out.innerHTML = `<p class="bad">${String(e)}</p>`;
+  } finally {
+    spinner.style.display = "none";
+  }
+});
+</script>

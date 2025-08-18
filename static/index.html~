@@ -1,0 +1,99 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>lemmon-checker</title>
+<style>
+  body{font-family:system-ui,Segoe UI,Arial;margin:2rem;}
+  textarea{width:100%;height:12rem;font-family:ui-monospace,Menlo,Consolas,monospace}
+  button{padding:.5rem 1rem;margin-top:.5rem}
+  table{border-collapse:collapse;margin-top:1rem;width:100%}
+  th,td{border:1px solid #ddd;padding:.4rem .6rem;text-align:left;font-size:14px}
+  .ok{color:#167d36;font-weight:600}.bad{color:#b00020;font-weight:600}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+  #err{white-space:pre-wrap;color:#b00020;margin-top:0.75rem}
+</style>
+
+<h1>lemmon-checker (pipe format)</h1>
+<p><a href="instructions.html">📄 Instructions</a></p>
+
+<form id="f">
+  <textarea name="proof" id="proof" placeholder="Paste your PROOF pipe text here"></textarea><br/>
+  <button id="btn">Check</button>
+</form>
+
+<div id="err"></div>
+<div id="out"></div>
+
+<script>
+(function(){
+  const f    = document.getElementById('f');
+  const ta   = document.getElementById('proof');
+  const out  = document.getElementById('out');
+  const err  = document.getElementById('err');
+
+  function nl2br(s){ return String(s).split('\n').join('<br/>'); }
+
+  async function postProof(proofText){
+    const res = await fetch('/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      body: proofText
+    });
+    const ct = res.headers.get('content-type') || '';
+    if (!res.ok) {
+      const text = await res.text().catch(()=> '');
+      throw new Error(`HTTP ${res.status}. ${text}`);
+    }
+    if (ct.includes('application/json')) {
+      return await res.json();
+    } else {
+      const text = await res.text();
+      throw new Error(`Expected JSON, got: ${ct}\n\n${text}`);
+    }
+  }
+
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    err.textContent = '';
+    out.innerHTML = '<p>Checking…</p>';
+    try {
+      const proof = new FormData(f).get('proof') || '';
+      console.log('Submitting proof:\n', proof);
+      const data = await postProof(proof);
+
+      console.log('Response:', data);
+
+      if (data.status !== 'ok') {
+        err.textContent = `Parse error:\n${data.error || '(no details)'}`;
+        out.innerHTML = '';
+        return;
+      }
+      const r = data.report;
+
+      const rows = r.lines.map(l => `
+        <tr>
+          <td class="mono">${l.line}</td>
+          <td class="mono">${(l.deps && l.deps.length ? l.deps.join(',') : '∅')}</td>
+          <td class="mono">${l.formulaPretty}</td>
+          <td class="mono">${l.justification}</td>
+          <td>${l.ok ? '<span class="ok">✅</span>' : '<span class="bad">❌</span>'}</td>
+          <td>${l.message ? nl2br(l.message) : ''}</td>
+        </tr>
+      `).join('');
+
+      out.innerHTML = `
+        <p><strong>Overall:</strong> ${r.valid ? '<span class="ok">VALID</span>' : '<span class="bad">INVALID</span>'}</p>
+        <table>
+          <thead>
+            <tr><th>Line</th><th>Deps</th><th>Formula</th><th>Justification</th><th>OK</th><th>Message</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    } catch (e2) {
+      console.error(e2);
+      out.innerHTML = '';
+      err.textContent = String(e2 && e2.message || e2);
+    }
+  });
+})();
+</script>

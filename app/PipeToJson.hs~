@@ -1,0 +1,184 @@
+{-# LANGUAGE OverloadedStrings #-}
+module Main where
+
+import           ProofTypes
+import           FormulaParser             (runParser)  -- the one we just wrote
+import           Data.Aeson                (encode)
+import qualified Data.ByteString.Lazy.Char8 as BL
+import           Data.Char                 (isDigit, isSpace)
+import           Data.List                 (dropWhileEnd)
+import           Data.List.Split           (splitOn)
+import           Data.Maybe                (mapMaybe)
+import qualified Data.Set                  as S
+import           System.Environment        (getArgs)
+import           System.Exit               (die)
+import           System.IO                 (hGetContents, stdin)
+
+-- | Trim helpers
+trim :: String -> String
+trim = dropWhileEnd isSpace . dropWhile isSpace
+
+-- | Parse the leftmost column: "1,2,7" -> Set {1,2,7}
+parseDepends :: String -> S.Set Int
+parseDepends s =
+  let pieces = filter (not . null) . map trim . splitOn "," $ s
+      toInt t = case reads t of
+                  [(n,"")] -> Just n
+                  _        -> Nothing
+  in S.fromList (mapMaybe toInt pieces)
+
+-- | Parse a justification cell into your 'Justification'
+-- Accepts unicode or ASCII rule tags; numbers can be comma-separated.
+parseJust :: String -> Either String Justification
+parseJust raw0 =
+  let raw = trim raw0
+      -- split into "nums..." and "rule tag"
+      -- e.g. "1,2 ∧I" / "1,2 andI" / "2,4 CP" / "3 ∀E" / "m x ∀I"
+      toks = words raw
+      nums = filter (all (\c -> isDigit c || c==',')) toks
+      ints = case nums of
+               []   -> []
+               (x:_) -> map read $ filter (not . null) (splitOn "," x)
+      -- capture optional variable token (for ∀I)
+      rest = filter (not . all (\c -> isDigit c || c==',')) toks
+      low  = unwords rest
+
+      is tag = tag `elem` words (alias tag)
+
+      alias t = case t of
+        "A"    -> "A"
+        "MP"   -> "MP"
+        "MT"   -> "MT"
+        "DN"   -> "DN"
+        "CP"   -> "CP"
+        "∧I"   -> "∧I andI ^I"
+        "∧E"   -> "∧E andE ^E"
+        "∨I"   -> "∨I orI"
+        "∨E"   -> "∨E orE"
+        "RAA"  -> "RAA"
+        "∀E"   -> "∀E forallE"
+        "∃I"   -> "∃I existsI"
+        "∀I"   -> "∀I forallI"
+        "∃E"   -> "∃E existsE"
+        other  -> other
+  in
+  case () of
+    _ | raw == "A" || map toUpper raw == "A"
+        -> Right Assumption
+
+      | any is ["MP"] ->
+          case ints of
+            [m,n] -> Right (MP m n)
+            _     -> Left $ "MP needs two line refs, got: " ++ show ints
+
+      | any is ["MT"] ->
+          case ints of
+            [m,n] -> Right (MT m n)
+            _     -> Left $ "MT needs two line refs, got: " ++ show ints
+
+      | any is ["DN"] ->
+          case ints of
+            [n] -> Right (DN n)
+            _   -> Left $ "DN needs one line ref, got: " ++ show ints
+
+      | any is ["CP"] ->
+          case ints of
+            [m,n] -> Right (CP m n)
+            _     -> Left $ "CP needs two line refs, got: " ++ show ints
+
+      | any is ["∧I"] ->
+          case ints of
+            [m,n] -> Right (AndIntro m n)
+            _     -> Left $ "∧I (AndIntro) needs two refs, got: " ++ show ints
+
+      | any is ["∧E"] ->
+          case ints of
+            [m] -> Right (AndElim m)
+            _   -> Left $ "∧E (AndElim) needs one ref, got: " ++ show ints
+
+      | any is ["∨I"] ->
+          case ints of
+            [m] -> Right (OrIntro m)
+            _   -> Left $ "∨I (OrIntro) needs one ref, got: " ++ show ints
+
+      | any is ["∨E"] ->
+          -- OrElim expects five ints in your type
+          case ints of
+            [a,b,c,d,e] -> Right (OrElim a b c d e)
+            _           -> Left $ "∨E (OrElim) needs five refs, got: " ++ show ints
+
+      | any is ["RAA"] ->
+          case ints of
+            [m,n] -> Right (RAA m n)
+            _     -> Left $ "RAA needs two refs (assumption, contradiction), got: " ++ show ints
+
+      | any is ["∀E"] ->
+          case ints of
+            [m] -> Right (ForallElim m)
+            _   -> Left $ "∀E (ForallElim) needs one ref, got: " ++ show ints
+
+      | any is ["∃I"] ->
+          case ints of
+            [m] -> Right (ExistsIntro m)
+            _   -> Left $ "∃I (ExistsIntro) needs one ref, got: " ++ show ints
+
+      | any is ["∀I"] ->
+          -- allow: "5 x ∀I"  OR  "5 ∀I x"
+          let ws = words raw
+              vs = filter (\w -> not (all (\c -> isDigit c || c==',' ) w) && w /= "∀I" && w /= "forallI") ws
+              var = case vs of
+                      (v:_) -> v
+                      _     -> ""
+          in case (ints, var) of
+               ([m], v@(_:_)) -> Right (ForallIntro m v)
+               _              -> Left $ "∀I (ForallIntro) needs one ref and a variable, got: " ++ show (ints, var)
+
+      | any is ["∃E"] ->
+          -- three ints: m (∃xφ), m1 (assumption φ(a)), n (result ψ)
+          case ints of
+            [m,m1,n] -> Right (ExistsElim m m1 n)
+            _        -> Left $ "∃E (ExistsElim) needs three refs, got: " ++ show ints
+
+      | otherwise -> Left $ "Unrecognized justification: " ++ show raw
+
+-- | Parse a single proof row "deps|lineno|formula|just"
+parseRow :: String -> Either String ProofLine
+parseRow line =
+  let cols = map trim (splitOn "|" line)
+  in case cols of
+       [depsTxt, lineTxt, formulaTxt, justTxt] -> do
+         n <- case reads lineTxt of
+                [(k,"")] -> Right k
+                _        -> Left $ "Bad (Line) integer: " ++ show lineTxt
+         φ <- case runParser formulaTxt of
+                Right f -> Right f
+                Left e  -> Left e
+         j <- parseJust justTxt
+         let refs = parseDepends depsTxt
+         pure ProofLine
+            { lineNumber    = n
+            , formula       = φ
+            , justification = j
+            , references    = refs
+            }
+       other ->
+         Left $ "Expected 4 columns separated by '|', got: " ++ show other
+
+-- | Drop header lines and empty lines
+meaningful :: [String] -> [String]
+meaningful =
+    filter (not . null)
+  . filter (\s -> let t = trim s in t /= "PROOF" && not ("Depends" `elem` words t))
+
+main :: IO ()
+main = do
+  args <- getArgs
+  content <-
+    case args of
+      [fp] -> readFile fp
+      []   -> hGetContents stdin
+      _    -> die "Usage: pipe-to-json [file]  (or pipe text on stdin)"
+  let rows = meaningful (lines content)
+  case traverse parseRow rows of
+    Left err     -> die err
+    Right proof  -> BL.putStrLn (encode (proof :: Proof))

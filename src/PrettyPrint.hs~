@@ -1,0 +1,48 @@
+-- PrettyPrint.hs  (or drop straight into LemmonChecker.hs)
+
+{-# LANGUAGE LambdaCase #-}
+
+module PrettyPrint (renderFormula, renderTerm) where
+
+import           ProofTypes
+import           Data.List       (intercalate)
+
+-- | Pretty print a Term
+renderTerm :: Term -> String
+renderTerm = \case
+  Var v   -> v
+  Const c -> c
+
+-- | Pretty-print a formula, adding parens only around
+--   sub-formulas whose root is a binary connective.
+renderFormula :: PredFormula -> String
+renderFormula = go
+  where
+    -- does this formula *itself* use a binary connective?
+    isBinary :: PredFormula -> Bool
+    isBinary And{}     = True
+    isBinary Or{}      = True
+    isBinary Implies{} = True
+    isBinary _         = False
+
+    wrapIfBin :: PredFormula -> String
+    wrapIfBin φ
+      | isBinary φ = "(" ++ go φ ++ ")"
+      | otherwise  = go φ
+
+    -- main pretty-printer -------------------------------------------
+    go (Boolean True)   = "⊤"
+    go (Boolean False)  = "⊥"
+
+    go (Predicate name ts)
+      | null ts         = name
+      | otherwise       = name ++ "(" ++ intercalate "," (map renderTerm ts) ++ ")"
+
+    go (Not φ)          = "¬" ++ wrapIfBin φ
+
+    go (And φ ψ)        = wrapIfBin φ ++ " ∧ " ++ wrapIfBin ψ
+    go (Or  φ ψ)        = wrapIfBin φ ++ " ∨ " ++ wrapIfBin ψ
+    go (Implies φ ψ)    = wrapIfBin φ ++ " → " ++ wrapIfBin ψ
+
+    go (ForAll x φ)     = "∀" ++ x ++ ". " ++ go φ
+    go (Exists x φ)     = "∃" ++ x ++ ". " ++ go φ  

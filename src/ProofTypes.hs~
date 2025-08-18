@@ -1,0 +1,39 @@
+module ProofTypes where
+
+import Data.Set (Set)
+
+type Proof = [ProofLine]
+
+data Term
+  = Var String
+  | Const String
+  deriving (Eq, Show)
+
+data PredFormula
+  = Predicate String [Term]
+  | Boolean Bool
+  | Not PredFormula
+  | And PredFormula PredFormula
+  | Or PredFormula PredFormula
+  | Implies PredFormula PredFormula
+  | ForAll String PredFormula
+  | Exists String PredFormula
+  deriving (Eq, Show)
+
+data Justification
+  = Assumption
+  | MP Int Int
+  | AndIntro Int Int
+  | AndElim Int
+  | OrIntro Int
+  | OrElim Int Int Int Int Int
+  | ForallElim Int Term
+  | ExistsIntro Int Term
+  deriving (Eq, Show)
+
+data ProofLine = ProofLine
+  { lineNumber :: Int
+  , formula :: PredFormula
+  , justification :: Justification
+  , references :: Set Int
+  } deriving (Eq, Show)

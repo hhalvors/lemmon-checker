@@ -1,0 +1,108 @@
+-- src/Normalize.hs
+module Normalize (normalizeSyntax) where
+
+import Data.Char (isAlphaNum, toLower)
+
+-- | Replace common ASCII shorthands (->, /\ , \/, ~, !, &, |, forall, exists, A, E)
+--   with the Unicode tokens your FormulaParser expects.
+--   This is a best-effort, token-aware pass (no extra deps).
+normalizeSyntax :: String -> String
+normalizeSyntax =
+    -- operators: do the longer ones first
+      replace "<=>" "↔"
+    . replace "<->" "↔"
+    . replace "->"  "→"
+    . replace "/\\" "∧"
+    . replace "\\/" "∨"
+    -- single-char operators (safe given your identifier conventions)
+    . replace "&"   "∧"
+    . replace "v"   "∨"
+    . replace "~"   "¬"
+    . replace "!"   "¬"
+    -- wordy quantifiers (case-insensitive, whole word)
+    . replaceWordCI "forall" "∀"
+    . replaceWordCI "exists" "∃"
+    -- quantifier shorthands as whole words: A x..., E x...
+    -- Only rewrite if followed by whitespace and then a lowercase letter or '('
+    . rewriteAorE
+
+--------------------------------------------------------------------------------
+-- Small helpers
+--------------------------------------------------------------------------------
+
+-- Simple, non-overlapping global replace (left-to-right).
+replace :: String -> String -> String -> String
+replace pat rep = go
+  where
+    plen = length pat
+    go [] = []
+    go s@(c:cs)
+      | pat `isPrefixOfCI` s = rep ++ go (drop plen s)
+      | otherwise            = c : go cs
+
+-- Case-insensitive prefix check (ASCII).
+isPrefixOfCI :: String -> String -> Bool
+isPrefixOfCI [] _          = True
+isPrefixOfCI _  []         = False
+isPrefixOfCI (x:xs) (y:ys) = toLower x == toLower y && isPrefixOfCI xs ys
+
+-- Replace whole word (CI) using simple word-boundary test (non-alnum on each side).
+replaceWordCI :: String -> String -> String -> String
+replaceWordCI pat rep = go Nothing
+  where
+    plen = length pat
+    go _ [] = []
+    go prev s@(c:cs)
+      | pat `isPrefixOfCI` s
+      , isWordBoundary prev
+      , isWordBoundary (nthAfter plen s)
+      = rep ++ go (lastChar rep) (drop plen s)
+      | otherwise = c : go (Just c) cs
+
+    isWordBoundary :: Maybe Char -> Bool
+    isWordBoundary Nothing  = True        -- start/end of string counts as boundary
+    isWordBoundary (Just ch) = not (isAlphaNum ch) && ch /= '_'
+
+    nthAfter :: Int -> String -> Maybe Char
+    nthAfter n xs = case drop n xs of
+                      (z:_) -> Just z
+                      []    -> Nothing
+
+    lastChar :: String -> Maybe Char
+    lastChar [] = Nothing
+    lastChar xs = Just (last xs)
+
+-- Rewrite standalone "A" / "E" as quantifiers when they look like: A  x... or E  (...
+-- i.e., whole-word A/E, followed by whitespace, then a lowercase variable or '('.
+rewriteAorE :: String -> String
+rewriteAorE = go Nothing
+  where
+    go _ [] = []
+    go prev s@(c:cs)
+      | isWordBoundary prev
+      , (q, rest) <- matchAorE s
+      , Just sym <- q
+      = sym : go (Just sym) rest
+      | otherwise = c : go (Just c) cs
+
+    matchAorE :: String -> (Maybe Char, String)
+    matchAorE s =
+      case s of
+        -- "A" ...
+        ('A':rest) | isWordBoundary (Just 'A')
+                    , (ws, rest2) <- span isSpace rest
+                    , startsWithVarOrParen rest2
+                    -> (Just '∀', rest)   -- we only emit '∀' and let main loop add 'A' body next
+        ('E':rest) | isWordBoundary (Just 'E')
+                    , (ws, rest2) <- span isSpace rest
+                    , startsWithVarOrParen rest2
+                    -> (Just '∃', rest)
+        _ -> (Nothing, s)
+
+    startsWithVarOrParen :: String -> Bool
+    startsWithVarOrParen []      = False
+    startsWithVarOrParen (x:_)   = x == '(' || (x >= 'a' && x <= 'z')
+
+    isWordBoundary :: Maybe Char -> Bool
+    isWordBoundary Nothing  = True
+    isWordBoundary (Just ch)= not (isAlphaNum ch) && ch /= '_'

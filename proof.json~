@@ -1,0 +1,79 @@
+[
+  {
+    "lineNumber": 1,
+    "formula": {
+      "tag": "ForAll",
+      "contents": [
+        "x",
+        {
+          "tag": "Predicate",
+          "contents": [
+            "P",
+            [
+              {
+                "tag": "Var",
+                "contents": "x"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    "justification": {
+      "tag": "Assumption"
+    },
+    "references": [
+      1
+    ]
+  },
+  {
+    "lineNumber": 2,
+    "formula": {
+      "tag": "Predicate",
+      "contents": [
+        "P",
+        [
+          {
+            "tag": "Const",
+            "contents": "a"
+          }
+        ]
+      ]
+    },
+    "justification": {
+      "tag": "ForallElim",
+      "contents": 1
+    },
+    "references": [
+      1
+    ]
+  },
+  {
+    "lineNumber": 3,
+    "formula": {
+      "tag": "Exists",
+      "contents": [
+        "x",
+        {
+          "tag": "Predicate",
+          "contents": [
+            "P",
+            [
+              {
+                "tag": "Var",
+                "contents": "x"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    "justification": {
+      "tag": "ExistsIntro",
+      "contents": 2
+    },
+    "references": [
+      1
+    ]
+  }
+]

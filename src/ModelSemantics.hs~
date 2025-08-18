@@ -1,0 +1,129 @@
+-- src/ModelSemantics.hs
+{-# LANGUAGE TupleSections #-}
+module ModelSemantics
+  ( Entity
+  , Model(..)
+  , VAssign
+  , emptyAssign
+  , assign
+  , interpretConst
+  , interpretPred
+  , fromTuples
+  , eval
+  , evalClosed
+  , freeVars
+  ) where
+
+import           ProofTypes
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as M
+import           Data.Set        (Set)
+import qualified Data.Set        as S
+import           Data.Maybe      (fromMaybe)
+import           Control.Monad   (foldM)
+
+-- You can choose a different underlying type if you prefer (e.g. Int)
+type Entity = String
+
+-- A predicate symbol is identified by (name, arity).
+type PredKey = (String, Int)
+
+-- Variable assignment: maps variable names (like "x") to domain elements.
+type VAssign = Map String Entity
+
+emptyAssign :: VAssign
+emptyAssign = M.empty
+
+assign :: String -> Entity -> VAssign -> VAssign
+assign = M.insert
+
+-- The first-order model:
+--  - domain: a non-empty set of entities
+--  - constInterp: maps constant symbols to an entity
+--  - predInterp: maps predicate (name, arity) to a *set of tuples* that make it true
+data Model = Model
+  { domain      :: Set Entity
+  , constInterp :: Map String Entity
+  , predInterp  :: Map PredKey (Set [Entity])
+  } deriving (Show, Eq)
+
+-- Helpers to build interpretations ------------------------------------------------
+
+-- | Look up a constant; fail if not present.
+interpretConst :: Model -> String -> Either String Entity
+interpretConst m c =
+  case M.lookup c (constInterp m) of
+    Just v -> Right v
+    Nothing -> Left $ "Uninterpreted constant: " ++ show c
+
+-- | Look up a predicate relation set by (name,arity); default to empty relation if missing.
+interpretPred :: Model -> String -> Int -> Set [Entity]
+interpretPred m p k = fromMaybe S.empty (M.lookup (p,k) (predInterp m))
+
+-- | Build a relation set from a list of tuples. (Arity must match tuple lengths.)
+fromTuples :: [[Entity]] -> Set [Entity]
+fromTuples = S.fromList
+
+-- Free variables (for convenience when checking sentences) -----------------------
+
+freeVars :: PredFormula -> Set String
+freeVars = go S.empty
+  where
+    go bound (Predicate _ ts) = S.fromList [ x | Var x <- ts, x `S.notMember` bound ]
+    go _     (Boolean _)      = S.empty
+    go b     (Not φ)          = go b φ
+    go b     (And φ ψ)        = go b φ `S.union` go b ψ
+    go b     (Or  φ ψ)        = go b φ `S.union` go b ψ
+    go b     (Implies φ ψ)    = go b φ `S.union` go b ψ
+    go b     (ForAll x φ)     = go (S.insert x b) φ
+    go b     (Exists x φ)     = go (S.insert x b) φ
+
+-- Term evaluation ----------------------------------------------------------------
+
+evalTerm :: Model -> VAssign -> Term -> Either String Entity
+evalTerm _ asg (Var x) =
+  case M.lookup x asg of
+    Just v  -> Right v
+    Nothing -> Left $ "Unbound variable: " ++ show x
+evalTerm m _   (Const c) = interpretConst m c
+
+-- Formula evaluation --------------------------------------------------------------
+
+-- | Evaluate a formula under a model and a variable assignment.
+--   Returns Left with a message for things like unbound variables or bad arity usage.
+eval :: Model -> VAssign -> PredFormula -> Either String Bool
+eval _ _   (Boolean b)    = Right b
+eval m asg (Predicate name ts) = do
+  vs <- mapM (evalTerm m asg) ts
+  let r = interpretPred m name (length ts)
+  pure (vs `S.member` r)
+eval m asg (Not φ)        = not <$> eval m asg φ
+eval m asg (And φ ψ)      = (&&) <$> eval m asg φ <*> eval m asg ψ
+eval m asg (Or  φ ψ)      = (||) <$> eval m asg φ <*> eval m asg ψ
+eval m asg (Implies φ ψ)  = (impl) <$> eval m asg φ <*> eval m asg ψ
+  where impl a b = (not a) || b
+eval m asg (ForAll x φ)   = do
+  let d = S.toList (domain m)
+  if null d
+     then Left "Empty domain: ∀ has no witnesses."
+     else allM (\v -> eval m (assign x v asg) φ) d
+eval m asg (Exists x φ)   = do
+  let d = S.toList (domain m)
+  if null d
+     then Left "Empty domain: ∃ has no witnesses."
+     else anyM (\v -> eval m (assign x v asg) φ) d
+
+-- | Evaluate a closed sentence (no free vars).
+--   If the formula has free vars, returns a helpful error.
+evalClosed :: Model -> PredFormula -> Either String Bool
+evalClosed m φ =
+  if S.null (freeVars φ)
+    then eval m emptyAssign φ
+    else Left $ "Formula is not closed; free variables: " ++ show (S.toList (freeVars φ))
+
+-- small Either helpers
+allM :: (a -> Either String Bool) -> [a] -> Either String Bool
+allM p = foldM (\acc x -> if acc then p x else pure False) True
+
+anyM :: (a -> Either String Bool) -> [a] -> Either String Bool
+anyM p = foldM (\acc x -> if acc then pure True else p x) False

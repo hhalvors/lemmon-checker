@@ -1,0 +1,47 @@
+import os
+import json
+import shutil
+from pathlib import Path
+from random import shuffle
+
+# CONFIG — update as needed
+SOURCE_DIR = Path("~/lemmon-checker/training-data").expanduser()
+DEST_ROOT = Path("~/lemmon-checker/donut-data").expanduser()
+TRAIN_SPLIT = 0.8  # 80% train, 20% valid
+
+def convert_dataset():
+    subfolders = sorted([f for f in SOURCE_DIR.iterdir() if f.is_dir()])
+    shuffle(subfolders)
+    split_idx = int(len(subfolders) * TRAIN_SPLIT)
+
+    train_dir = DEST_ROOT / "train"
+    valid_dir = DEST_ROOT / "valid"
+    train_dir.mkdir(parents=True, exist_ok=True)
+    valid_dir.mkdir(parents=True, exist_ok=True)
+
+    def process(subset, dest_dir, start_idx):
+        for i, folder in enumerate(subset):
+            img_path = folder / "proof.jpeg"
+            json_path = folder / "proof.json"
+            if not (img_path.exists() and json_path.exists()):
+                print(f"Skipping {folder} (missing files)")
+                continue
+
+            # Load and wrap JSON
+            with open(json_path) as f:
+                proof = json.load(f)
+            wrapped = {"gt_parse": json.dumps({"proof": proof}, separators=(",", ":"), ensure_ascii=False)}
+
+            # Save as 3-digit flat filenames
+            index = f"{start_idx + i:03}"
+            shutil.copy(img_path, dest_dir / f"{index}.jpg")
+            with open(dest_dir / f"{index}.json", "w") as out:
+                json.dump(wrapped, out, indent=2)
+
+    process(subfolders[:split_idx], train_dir, 0)
+    process(subfolders[split_idx:], valid_dir, 100)
+
+    print(f"Converted {len(subfolders[:split_idx])} training and {len(subfolders[split_idx:])} validation examples.")
+
+if __name__ == "__main__":
+    convert_dataset()

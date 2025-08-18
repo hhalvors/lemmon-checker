@@ -1,0 +1,70 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>lemmon-checker – Instructions</title>
+<style>
+  body { font-family: system-ui,Segoe UI,Arial; margin: 2rem; line-height: 1.5; max-width: 50rem;}
+  code, pre { background: #f7f7f7; padding: 0.2rem 0.4rem; border-radius: 3px; font-family: ui-monospace,Menlo,Consolas,monospace; }
+  pre { padding: 0.5rem 0.75rem; overflow-x: auto; }
+</style>
+
+<h1>Instructions for lemmon-checker</h1>
+
+<p>This tool checks <strong>Lemmon-style natural deduction proofs</strong> entered in <em>pipe format</em>.</p>
+
+<h2>1. Pipe format</h2>
+<p>Each proof line is written as:</p>
+
+<pre>REFERENCES|LINE_NUMBER|FORMULA|JUSTIFICATION</pre>
+
+<ul>
+  <li><strong>REFERENCES</strong>: Comma-separated list of dependency numbers, or empty for none.</li>
+  <li><strong>LINE_NUMBER</strong>: The current line number in the proof.</li>
+  <li><strong>FORMULA</strong>: A logical formula using the connectives below.</li>
+  <li><strong>JUSTIFICATION</strong>: Rule name (and possibly references) explaining the step.</li>
+</ul>
+
+<h3>Example</h3>
+<pre>
+1|1|P→∀xF(x)|A
+2|2|P|A
+1,2|3|∀xF(x)|1,2 MP
+1,2|4|F(a)|3 ∀E
+1|5|P→F(a)|2,4 CP
+1|6|∀x(P→F(x))|5 ∀I
+</pre>
+
+<h2>2. Logical connectives</h2>
+<p>Use the following symbols in formulas:</p>
+
+<ul>
+  <li><code>¬</code>  – negation</li>
+  <li><code>∧</code>  – conjunction (and)</li>
+  <li><code>∨</code>  – disjunction (or)</li>
+  <li><code>→</code>  – conditional (if … then)</li>
+  <li><code>↔</code>  – biconditional (if and only if)</li>
+  <li><code>∀x</code> – universal quantifier</li>
+  <li><code>∃x</code> – existential quantifier</li>
+</ul>
+
+<p>Predicates are uppercase letters followed by terms, e.g. <code>F(a)</code> or <code>Rxy</code>. Constants are lowercase letters (a, b, c, …), and variables are also lowercase.</p>
+
+<h2>3. Common justification abbreviations</h2>
+<ul>
+  <li><code>A</code> – Assumption</li>
+  <li><code>MP</code> – Modus Ponens</li>
+  <li><code>CP</code> – Conditional Proof</li>
+  <li><code>∀E</code> – Universal Elimination</li>
+  <li><code>∀I</code> – Universal Introduction</li>
+  <li><code>∃E</code> – Existential Elimination</li>
+  <li><code>∃I</code> – Existential Introduction</li>
+  <li><code>RAA</code> – Reductio ad Absurdum</li>
+</ul>
+
+<h2>4. Tips</h2>
+<ul>
+  <li>Each formula must be well-formed according to the syntax rules above.</li>
+  <li>Whitespace is ignored in most places.</li>
+  <li>Make sure dependencies and line numbers match your intended scope.</li>
+</ul>
+
+<p><a href="index.html">⬅ Back to checker</a></p>

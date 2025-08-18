@@ -1,0 +1,74 @@
+[
+  {
+    "lineNumber": 1,
+    "formula": {
+      "tag": "Predicate",
+      "contents": ["F", [{ "tag": "Const", "contents": "a" }]]
+    },
+    "references": [1],
+    "justification": { "tag": "Assumption" }
+  },
+  {
+    "lineNumber": 2,
+    "formula": {
+      "tag": "Implies",
+      "contents": [
+        {
+          "tag": "Predicate",
+          "contents": ["F", [{ "tag": "Const", "contents": "a" }]]
+        },
+        {
+          "tag": "Predicate",
+          "contents": ["F", [{ "tag": "Const", "contents": "a" }]]
+        }
+      ]
+    },
+    "references": [],
+    "justification": { "tag": "CP", "contents": [1, 1] }
+  },
+  {
+    "lineNumber": 3,
+    "formula": {
+      "tag": "ForAll",
+      "contents": ["y", {
+        "tag": "Implies",
+        "contents": [
+          {
+            "tag": "Predicate",
+            "contents": ["F", [{ "tag": "Const", "contents": "a" }]]
+          },
+          {
+            "tag": "Predicate",
+            "contents": ["F", [{ "tag": "Var", "contents": "y" }]]
+          }
+        ]
+      }]
+    },
+    "references": [],
+    "justification": { "tag": "ForallIntro", "contents": [2, "y"] }
+  },
+  {
+    "lineNumber": 4,
+    "formula": {
+      "tag": "Exists",
+      "contents": ["x", {
+        "tag": "ForAll",
+        "contents": ["y", {
+          "tag": "Implies",
+          "contents": [
+            {
+              "tag": "Predicate",
+              "contents": ["F", [{ "tag": "Var", "contents": "x" }]]
+            },
+            {
+              "tag": "Predicate",
+              "contents": ["F", [{ "tag": "Var", "contents": "y" }]]
+            }
+          ]
+        }]
+      }]
+    },
+    "references": [],
+    "justification": { "tag": "ExistsIntro", "contents": 3 }
+  }
+]

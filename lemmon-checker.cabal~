@@ -1,0 +1,87 @@
+cabal-version:       >=1.10
+name:                lemmon-checker
+version:             0.1.0.0
+build-type:          Simple
+
+library
+  exposed-modules:
+      ProofTypes
+      LemmonChecker
+      PrettyPrint
+      FormulaParser
+      PipeParse
+  hs-source-dirs:      src
+  build-depends:
+      base >=4.7 && <5
+    , aeson
+    , text
+    , containers
+    , parsec
+    , split
+  default-language:    Haskell2010
+
+executable lemmon-check
+  main-is:             Main.hs
+  hs-source-dirs:      app
+  build-depends:       base, lemmon-checker, aeson, text, bytestring
+  default-language:    Haskell2010
+
+executable json-to-pipe
+  main-is:             JsonToPipe.hs
+  hs-source-dirs:      app
+  build-depends:       base, aeson, bytestring, text, containers, lemmon-checker
+  default-language:    Haskell2010
+
+executable pipe-to-json
+  hs-source-dirs:      app
+  main-is:             PipeToJson.hs
+  ghc-options:         -Wall
+  build-depends:
+      base >=4.7 && <5,
+      aeson,
+      text,
+      bytestring,     
+      split,          
+      containers,
+      parsec,
+      lemmon-checker
+  default-language:    Haskell2010
+
+executable pipe-check
+  hs-source-dirs:      app
+  main-is:             PipeCheck.hs
+  build-depends:
+      base >=4.7 && <5
+    , aeson
+    , bytestring
+    , text
+    , containers
+    , split
+    , parsec
+    , lemmon-checker
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+
+executable web
+  main-is:             Web.hs
+  hs-source-dirs:      app
+  build-depends:
+      base
+    , lemmon-checker
+    , scotty
+    , wai
+    , wai-middleware-static
+    , wai-extra
+    , aeson
+    , text
+    , bytestring
+    , containers
+    , http-types
+  default-language:    Haskell2010  
+
+test-suite lemmon-checker-test
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Tests.hs
+  build-depends:       base, lemmon-checker
+  default-language:    Haskell2010

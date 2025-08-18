@@ -1,0 +1,13 @@
+# Haskell / Stack
+.stack-work/
+dist/
+dist-newstyle/
+
+# Common system junk
+*.o
+*.hi
+*.log
+
+# Editor files
+*.swp
+.DS_Store

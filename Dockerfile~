@@ -1,0 +1,27 @@
+# ---- build stage ----
+FROM haskell:9.4 as build
+
+WORKDIR /app
+COPY stack.yaml package.yaml *.cabal ./
+COPY src ./src
+COPY app ./app
+COPY test ./test
+
+RUN stack setup
+RUN stack install --local-bin-path /app/bin
+
+# ---- runtime stage ----
+FROM debian:bullseye-slim
+
+# UTF-8 for your logic symbols
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
+# Fly will set PORT; Scotty reads it
+ENV PORT=8080
+
+WORKDIR /app
+COPY --from=build /app/bin/web /app/web
+
+EXPOSE 8080
+CMD ["/app/web"]

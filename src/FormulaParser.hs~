@@ -1,0 +1,189 @@
+-- FormulaParser.hs
+{-# LANGUAGE LambdaCase #-}
+module FormulaParser
+  ( parsePredFormula
+  , runParser
+  ) where
+
+import           ProofTypes
+import           Text.ParserCombinators.ReadP
+import           Data.Char (isSpace, isUpper, isDigit)
+import           Data.List (intercalate)
+
+-- ----------------------------------------------------------------------------
+-- Public API
+-- ----------------------------------------------------------------------------
+
+runParser :: String -> Either String PredFormula
+runParser s =
+  case readP_to_S (skipSpaces *> parsePredFormula <* skipSpaces <* eof) s of
+    [(r,"")] -> Right r
+    _        -> Left ("Failed to parse formula: " ++ s)
+
+-- Top-level parser with precedence: (¬,∀,∃) > (∧,∨) > (→)
+parsePredFormula :: ReadP PredFormula
+parsePredFormula = parseImp
+
+-- ----------------------------------------------------------------------------
+-- Operator tokens (Unicode + ASCII fallbacks)
+-- ----------------------------------------------------------------------------
+
+tok :: ReadP a -> ReadP a
+tok p = skipSpaces *> p <* skipSpaces
+
+sym :: String -> ReadP String
+sym = tok . string
+
+pNot     = tok (string "¬")  <++ tok (string "~")
+pAnd     = tok (string "∧")  <++ tok (string "and")
+pOr      = tok (string "∨")  <++ tok (string "or")
+pImplies = tok (string "→")  <++ tok (string "->")
+pForall  = tok (string "∀")  <++ tok (string "forall")
+pExists  = tok (string "∃")  <++ tok (string "exists")
+
+-- Optional dot after quantifier: '∀x. φ' or 'forall x φ'
+optDot :: ReadP ()
+optDot = () <$ optional (tok (string "."))
+
+-- ----------------------------------------------------------------------------
+-- Grammar (by precedence)
+--   imp   := or' ('->' imp)?          -- right-assoc
+--   or'   := and' (('∨'|'or') and')*  -- left-assoc
+--   and'  := unary (('∧'|'and') unary)*  -- left-assoc
+--   unary := neg | quant | atom | '(' imp ')'
+-- ----------------------------------------------------------------------------
+
+parseImp :: ReadP PredFormula
+parseImp = chainr1 parseOr (toBin <$> pImplies)
+  where toBin _ = Implies
+
+parseOr :: ReadP PredFormula
+parseOr = chainl1 parseAnd (toBin <$> pOr)
+  where toBin _ = Or
+
+parseAnd :: ReadP PredFormula
+parseAnd = chainl1 parseUnary (toBin <$> pAnd)
+  where toBin _ = And
+
+parseUnary :: ReadP PredFormula
+parseUnary =
+      parseNeg
+  <++ parseQuant
+  <++ parseAtom
+  <++ parens parsePredFormula
+
+parseNeg :: ReadP PredFormula
+parseNeg = do
+  _ <- pNot
+  Not <$> parseUnary
+
+parseQuant :: ReadP PredFormula
+parseQuant = parseForall <++ parseExistsQ
+
+parseForall :: ReadP PredFormula
+parseForall = do
+  _ <- pForall
+  v <- varName
+  optDot
+  ForAll v <$> parseUnary
+
+parseExistsQ :: ReadP PredFormula
+parseExistsQ = do
+  _ <- pExists
+  v <- varName
+  optDot
+  Exists v <$> parseUnary
+
+parens :: ReadP a -> ReadP a
+parens p = tok (char '(') *> p <* tok (char ')')
+
+-- ----------------------------------------------------------------------------
+-- Atoms: Predicates with optional arguments (functional or concatenation)
+--   - Predicate name: [A-Z][A-Z0-9]*
+--   - Functional args: '(' term (',' term)* ')'
+--   - Concat args: a run of terms immediately after the name, e.g. Rxy, Fax
+--   - Nullary: just the predicate symbol (e.g., P)
+-- ----------------------------------------------------------------------------
+
+parseAtom :: ReadP PredFormula
+parseAtom = parsePredicate
+
+parsePredicate :: ReadP PredFormula
+parsePredicate = do
+  name <- predName
+  -- Lookahead: '(' => functional args; otherwise try concat terms
+  (do _ <- tok (char '(')
+      args <- sepBy1 parseTerm (tok (char ','))
+      _ <- tok (char ')')
+      pure (Predicate name args))
+  <++
+  (do args <- many parseConcatTerm
+      pure (Predicate name args))
+  <++
+  pure (Predicate name [])
+
+-- Predicate name = maximal run of [A-Z][A-Z0-9]*
+predName :: ReadP String
+predName = do
+  h <- satisfy isUpper
+  t <- munch (\c -> isUpper c || isDigit c)
+  pure (h:t)
+
+-- ----------------------------------------------------------------------------
+-- Terms
+--   Variables: x|y|z with optional digits/underscores (e.g., x, x2, z_10)
+--   Constants: a..w (excluding x,y,z) with optional digits/underscores
+--   These rules match your handwriting conventions and keep concat style unambiguous.
+-- ----------------------------------------------------------------------------
+
+parseTerm :: ReadP Term
+parseTerm = parseVar <++ parseConst
+
+-- Concat-term lexer: same rules but *must* consume at least one symbol without spaces
+parseConcatTerm :: ReadP Term
+parseConcatTerm = do
+  -- No leading spaces; either var or const in a single glued token
+  let one =  parseVarNoSpace <++ parseConstNoSpace
+  one
+
+-- Variable name (semantic string), e.g., "x", "x2", "z_10"
+varName :: ReadP String
+varName = do
+  h <- satisfy isVarStart
+  t <- munch isVarTail
+  pure (h:t)
+
+-- Constant name (semantic string), e.g., "a", "c3", "t_1"
+constName :: ReadP String
+constName = do
+  h <- satisfy isConstStart
+  t <- munch isConstTail
+  pure (h:t)
+
+parseVar :: ReadP Term
+parseVar = tok (Var <$> varName)
+
+parseConst :: ReadP Term
+parseConst = tok (Const <$> constName)
+
+-- No-space variants (for concatenation immediately after predicate)
+parseVarNoSpace :: ReadP Term
+parseVarNoSpace = Var <$> ((:) <$> satisfy isVarStart <*> munch isVarTail)
+
+parseConstNoSpace :: ReadP Term
+parseConstNoSpace = Const <$> ((:) <$> satisfy isConstStart <*> munch isConstTail)
+
+-- Character classes ----------------------------------------------------------
+
+-- Variables start only with x|y|z
+isVarStart :: Char -> Bool
+isVarStart c = c `elem` "xyz"
+
+-- Constants: a..w (excluding x,y,z)
+isConstStart :: Char -> Bool
+isConstStart c = c >= 'a' && c <= 'w'
+
+-- Allow digits/underscores after the first letter
+isVarTail, isConstTail :: Char -> Bool
+isVarTail   c = isDigit c || c == '_'
+isConstTail c = isDigit c || c == '_'
