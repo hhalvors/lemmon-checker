@@ -22,3 +22,27 @@ env/
 __pycache__/
 *.pyc
 *.pyo
+
+# Built binaries
+/app/bin/
+/.stack-work/install/
+/.stack-work/**/build/**
+/*.exe
+/web
+/lemmon-check
+/pipe-check
+/pipe-to-json
+/json-to-pipe
+/model-test
+
+# Python venvs & caches
+venv*/
+.venv*/
+__pycache__/
+*.pyc
+
+# Large local data
+training-data/
+*.zip
+*.dylib
+*.so
