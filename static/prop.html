@@ -1,0 +1,155 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>lemmon-checker — Propositional truth tables</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { --fg:#111; --muted:#666; --ok:#167d36; --bad:#b00020; --br:#e5e7eb; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, Segoe UI, Roboto, Arial, sans-serif; color:var(--fg); margin:2rem; }
+  h1 { margin:0 0 1rem 0; }
+  .row { display:grid; grid-template-columns: 1fr; gap:1rem; }
+  .card { border:1px solid var(--br); border-radius:12px; padding:1rem; background:#fff; }
+  label { display:block; font-weight:600; margin:.25rem 0 .5rem; }
+  input[type="text"], textarea { width:100%; padding:.6rem .7rem; border:1px solid var(--br); border-radius:10px; font-size:16px; }
+  textarea { height:5.5rem; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .controls { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; margin-top:.5rem; }
+  button { padding:.55rem 1.0rem; border-radius:10px; border:1px solid var(--br); background:#111; color:#fff; cursor:pointer; }
+  button:disabled { opacity:.6; cursor:not-allowed; }
+  .hint { color:var(--muted); font-family: ui-monospace, Menlo, Consolas, monospace; font-size:14px; }
+  table { width:100%; border-collapse: collapse; margin-top:1rem; }
+  th, td { border:1px solid var(--br); padding:.5rem .6rem; text-align:center; }
+  th { background:#fafafa; font-weight:700; }
+  td { font-family: ui-monospace, Menlo, Consolas, monospace; font-size:16px; }
+  .status { margin-top:.5rem; min-height:1.2em; }
+  .bad { color:var(--bad); font-weight:600; white-space:pre-wrap; }
+  .ok  { color:var(--ok); font-weight:600; }
+  .topbar { display:flex; align-items:center; gap:1rem; margin-bottom:1rem; }
+  a { color:inherit; }
+</style>
+
+<div class="topbar">
+  <h1>Propositional truth tables</h1>
+  <div class="hint">(<a href="/">back to proof checker</a> · <a href="/model">model checker</a>)</div>
+</div>
+
+<div class="row">
+  <div class="card">
+    <label for="sentence">Sentence</label>
+    <textarea id="sentence" placeholder="Example: (P → Q) ∨ R  or  (P -> Q) v R"></textarea>
+    <div class="hint">
+      ASCII is fine: <code>-></code> (→), <code>~</code> (¬), <code>/\</code> (&amp;), <code>\/</code> (v), or word forms “and/or/not”.<br/>
+      Only propositional constants (arity 0) are allowed here; no predicates with arguments.
+    </div>
+
+    <div class="controls">
+      <label class="hint">Class code (optional):
+        <input id="code" type="text" style="width:14rem" placeholder="">
+      </label>
+      <label class="hint">
+        <input type="checkbox" id="sendhdr" checked>
+        Send code in header <code>X-Class-Code</code>
+      </label>
+      <button id="run">Build table</button>
+      <span id="spinner" class="hint" style="display:none">Working…</span>
+    </div>
+
+    <div id="status" class="status"></div>
+    <div id="table-wrap"></div>
+  </div>
+</div>
+
+<script>
+const byId = id => document.getElementById(id);
+
+function tf(b){ return b ? "T" : "F"; }
+
+function clear(node){ while(node.firstChild) node.removeChild(node.firstChild); }
+
+function buildTable(rows){
+  const wrap = byId('table-wrap');
+  clear(wrap);
+  if(!rows || !rows.length){
+    wrap.innerHTML = '<div class="hint">No rows to display.</div>';
+    return;
+  }
+
+  // Discover columns
+  const first = rows[0];
+  const valuation = first.valuation || {};
+  const propNames = Object.keys(valuation).sort();          // P, Q, R, ...
+  const formulaKey = Object.keys(first).find(k => k !== "valuation");
+
+  // Build table
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const tbody = document.createElement('tbody');
+
+  const trh = document.createElement('tr');
+  for(const p of propNames){
+    const th = document.createElement('th'); th.textContent = p; trh.appendChild(th);
+  }
+  const thF = document.createElement('th'); thF.textContent = formulaKey || "Value"; trh.appendChild(thF);
+  thead.appendChild(trh);
+
+  for(const row of rows){
+    const tr = document.createElement('tr');
+    for(const p of propNames){
+      const td = document.createElement('td'); td.textContent = tf(!!row.valuation[p]); tr.appendChild(td);
+    }
+    const tdV = document.createElement('td'); tdV.textContent = tf(!!row[formulaKey]); tr.appendChild(tdV);
+    tbody.appendChild(tr);
+  }
+
+  table.appendChild(thead);
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+}
+
+async function run(){
+  const btn = byId('run');
+  const spinner = byId('spinner');
+  const status = byId('status');
+  const tableWrap = byId('table-wrap');
+
+  status.textContent = '';
+  status.className = 'status';
+  clear(tableWrap);
+
+  const sTxt = byId('sentence').value.trim();
+  if(!sTxt){
+    status.textContent = 'Please enter a sentence.'; status.classList.add('bad'); return;
+  }
+
+  btn.disabled = true; spinner.style.display = 'inline';
+
+  try{
+    const headers = { 'Content-Type': 'application/json' };
+    const code = byId('code').value.trim();
+    if(byId('sendhdr').checked && code) headers['X-Class-Code'] = code;
+
+    const res = await fetch('/prop/table', {
+      method:'POST',
+      headers,
+      body: JSON.stringify({ sentenceText: sTxt })
+    });
+
+    let data;
+    try{ data = await res.json(); }
+    catch(_){ data = { status:'bad_json', error:'Non-JSON response from server.' }; }
+
+    if(data.status === 'ok'){
+      buildTable(data.rows);
+      status.textContent = 'Built truth table.'; status.classList.add('ok');
+    }else{
+      const msg = data.error || 'Unknown error';
+      status.innerHTML = `<span class="bad">${data.status}: ${msg}</span>`;
+    }
+  }catch(e){
+    status.innerHTML = `<span class="bad">${String(e)}</span>`;
+  }finally{
+    btn.disabled = false; spinner.style.display = 'none';
+  }
+}
+
+byId('run').addEventListener('click', run);
+</script>
