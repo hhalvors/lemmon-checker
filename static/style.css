@@ -1,0 +1,83 @@
+/* Global styles */
+body {
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  background: #f9f9fb;
+  color: #333;
+}
+
+header {
+  background: #283593;
+  color: white;
+  padding: 1em;
+  text-align: center;
+}
+
+h1, h2 {
+  font-weight: 600;
+}
+
+main {
+  max-width: 800px;
+  margin: 2em auto;
+  padding: 1.5em;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+button, a.button {
+  display: inline-block;
+  padding: 0.6em 1.2em;
+  margin: 0.5em;
+  font-size: 1em;
+  font-weight: 500;
+  text-decoration: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  background: #3949ab;
+  color: white;
+  transition: background 0.2s ease-in-out;
+}
+
+button:hover, a.button:hover {
+  background: #1e2a78;
+}
+
+footer {
+  margin-top: 2em;
+  text-align: center;
+  color: #777;
+}
+
+textarea {
+  width: 100%;
+  max-width: 600px;  /* keeps it from being *too* wide on big screens */
+  height: 120px;     /* adjust to taste */
+  padding: 8px;
+  font-size: 1rem;
+  font-family: monospace; /* better for proofs */
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  box-sizing: border-box;
+}
+
+/* Navigation bar */
+nav {
+  background: #2c3e91;
+  padding: 0.75rem 2rem;   /* <-- add horizontal padding */
+  display: flex;
+  gap: 1.5rem;             /* spacing between links */
+}
+
+nav a {
+  color: white;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+nav a:hover {
+  text-decoration: underline;
+}

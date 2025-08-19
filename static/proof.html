@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Proof Checker</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* Page-specific tweaks on top of style.css */
+    .card{max-width:1200px;margin:1.25rem auto;padding:1.25rem}
+    form#proofForm .row{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}
+    form#proofForm label{font-weight:700}
+    #proofText{width:100%;min-height:14rem;resize:vertical}
+    .actions{margin-top:.75rem;display:flex;gap:.75rem;align-items:center}
+    table{width:100%;border-collapse:collapse;margin-top:1rem}
+    th,td{padding:.5rem .6rem;border-top:1px solid #eee;vertical-align:top}
+    th{background:#fafafa;text-align:left}
+    .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+    .ok{color:#167d36;font-weight:600}
+    .bad{color:#b00020;font-weight:600}
+    .hint{opacity:.75}
+    .spacer{flex:1}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Proof Checker</h1>
+  </header>
+
+  <nav>
+    <a href="/">Home</a>
+    <a href="/proof" aria-current="page">Proof Checker</a>
+    <a href="/model">Model Checker</a>
+    <a href="/prop">Truth Tables</a>
+    <a href="/instructions">Instructions</a>
+  </nav>
+
+  <main>
+    <section class="card">
+      <form id="proofForm" autocomplete="off">
+
+        <textarea id="proofText" name="proof" class="mono" placeholder="Paste your PROOF text here"></textarea>
+
+        <div class="actions">
+          <button id="checkBtn" type="submit" class="btn">Check</button>
+          <span class="hint">Tip: <span class="mono">Ctrl/⌘ + Enter</span> to check.</span>
+        </div>
+      </form>
+
+      <div id="overall" style="margin-top:1rem;"></div>
+
+      <table id="lineTable" style="display:none">
+        <thead>
+          <tr>
+            <th>Line</th>
+            <th>Deps</th>
+            <th>Formula</th>
+            <th>Justification</th>
+            <th>OK</th>
+            <th>Message</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+
+      <div id="errorBox"></div>
+    </section>
+  </main>
+
+  <footer>
+    &copy; 2025 Symbolic Logic Tools
+  </footer>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const proofText = $('proofText');
+  const overall   = $('overall');
+  const table     = $('lineTable');
+  const tbody     = table.querySelector('tbody');
+  const errorBox  = $('errorBox');
+
+  function setBusy(b){
+    const btn = $('checkBtn');
+    btn.disabled = b;
+    btn.textContent = b ? 'Checking…' : 'Check';
+  }
+
+  function renderRows(lines){
+    tbody.innerHTML = '';
+    for (const l of lines){
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="mono">${l.line}</td>
+        <td class="mono">${(l.deps && l.deps.length) ? l.deps.join(',') : '∅'}</td>
+        <td class="mono">${l.formulaPretty}</td>
+        <td class="mono">${l.justification}</td>
+        <td>${l.ok ? '<span class="ok">OK</span>' : '<span class="bad">X</span>'}</td>
+        <td>${l.message ? String(l.message).replaceAll('\n','<br>') : ''}</td>
+      `;
+      tbody.appendChild(tr);
+    }
+    table.style.display = lines.length ? '' : 'none';
+  }
+
+  async function doCheck(e){
+    if (e) e.preventDefault();
+    errorBox.textContent = '';
+    overall.innerHTML = '';
+    renderRows([]);
+    setBusy(true);
+
+    const proof = proofText.value;
+
+    try{
+      const res  = await fetch('/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: proof
+      });
+      const data = await res.json();
+
+      if (data.status !== 'ok') {
+        const msg = (data.error || 'Unknown error').toString();
+        overall.innerHTML = `<span class="bad">${data.status.replaceAll('_',' ')}: ${msg}</span>`;
+        return;
+      }
+
+      const r = data.report;
+      overall.innerHTML = `Overall: <strong class="${r.valid ? 'ok' : 'bad'}">${r.valid ? 'VALID' : 'INVALID'}</strong>`;
+      renderRows(r.lines || []);
+    } catch (err) {
+      overall.innerHTML = `<span class="bad">Network error: ${String(err)}</span>`;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  $('proofForm').addEventListener('submit', doCheck);
+
+  // Ctrl/Cmd + Enter triggers check
+  proofText.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      doCheck(e);
+    }
+  });
+</script>  
+
+  
+</body>
+</html>

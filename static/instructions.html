@@ -1,70 +1,147 @@
 <!doctype html>
-<meta charset="utf-8" />
-<title>lemmon-checker – Instructions</title>
-<style>
-  body { font-family: system-ui,Segoe UI,Arial; margin: 2rem; line-height: 1.5; max-width: 50rem;}
-  code, pre { background: #f7f7f7; padding: 0.2rem 0.4rem; border-radius: 3px; font-family: ui-monospace,Menlo,Consolas,monospace; }
-  pre { padding: 0.5rem 0.75rem; overflow-x: auto; }
-</style>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Instructions • Symbolic Logic Tools</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .container{max-width:1000px;margin:2rem auto;padding:1.25rem;background:#fff;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.06)}
+    h2{margin-top:1.25rem}
+    .tips{background:#f6f7fb;border:1px solid #e5e7f2;border-radius:10px;padding:1rem}
+    .grid{display:grid;gap:1rem}
+    @media (min-width: 880px){ .grid{grid-template-columns: 1fr 1fr}}
+    code,kbd,pre{font-family: ui-monospace, Menlo, Consolas, monospace}
+    kbd{border:1px solid #ccd1e1;border-bottom-width:2px;border-radius:6px;padding:.1rem .35rem;background:#fff}
+    .mono{font-family: ui-monospace, Menlo, Consolas, monospace}
+    .muted{color:#667}
+    .small{font-size:.925rem}
+    .pill{display:inline-block;background:#eef2ff;border:1px solid #dbe1ff;color:#2a3; padding:.15rem .5rem;border-radius:999px;font-size:.85rem}
+    .tableish{overflow-x:auto}
+    table.shortcuts{width:100%;border-collapse:collapse;font-size:.95rem}
+    .shortcuts th,.shortcuts td{border:1px solid #e5e7f2;padding:.5rem .65rem;text-align:left}
+    .shortcuts th{background:#f8f9fe}
+  </style>
+</head>
+<body>
 
-<h1>Instructions for lemmon-checker</h1>
+  <header>
+    <h1>Instructions</h1>
+  </header>
 
-<p>This tool checks <strong>Lemmon-style natural deduction proofs</strong> entered in <em>pipe format</em>.</p>
+  <nav>
+    <a href="/">Home</a>
+    <a href="/proof">Proof Checker</a>
+    <a href="/model">Model Checker</a>
+    <a href="/prop">Truth Tables</a>
+    <a class="active" href="/instructions">Instructions</a>
+  </nav>
 
-<h2>1. Pipe format</h2>
-<p>Each proof line is written as:</p>
+  <main>
+    <div class="container">
+      <p class="muted small">
+        These tools share the same syntax normalizer. You can type Unicode symbols (¬ ∧ ∨ → ∀ ∃)
+        or use the ASCII shortcuts below. Variables can be any letters or alphanumerics (e.g. <code>x</code>, <code>y</code>, <code>z</code>, <code>x1</code>).
+      </p>
 
-<pre>REFERENCES|LINE_NUMBER|FORMULA|JUSTIFICATION</pre>
+      <section id="shortcuts">
+        <h2>Common syntax & shortcuts</h2>
+        <div class="tableish">
+          <table class="shortcuts">
+            <thead>
+              <tr><th>Meaning</th><th>Unicode</th><th>ASCII you can type</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>not</td><td class="mono">¬φ</td><td class="mono">~φ, not φ</td></tr>
+              <tr><td>and</td><td class="mono">φ ∧ ψ</td><td class="mono">φ /\ ψ, φ & ψ, φ and ψ</td></tr>
+              <tr><td>or</td><td class="mono">φ ∨ ψ</td><td class="mono">φ \/ ψ, φ v ψ, φ or ψ</td></tr>
+              <tr><td>implies</td><td class="mono">φ → ψ</td><td class="mono">φ -> ψ, φ => ψ</td></tr>
+              <tr><td>forall</td><td class="mono">∀x φ</td><td class="mono">forall x φ, <strong>Axφ</strong></td></tr>
+              <tr><td>exists</td><td class="mono">∃x φ</td><td class="mono">exists x φ, <strong>Exφ</strong></td></tr>
+              <tr><td>predicates</td><td class="mono">Rxy, F x</td><td class="mono">application by juxtaposition or parentheses</td></tr>
+              <tr><td>propositional constants</td><td class="mono">P, Q, R</td><td class="mono">treated as 0-ary predicates</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small muted">
+          We also accept spaced forms like <code>∀ x (Fx → Gx)</code>. The shorthands <code>Ax</code>, <code>Ex</code> bind a single
+          variable character immediately after the <code>A</code>/<code>E</code>.
+        </p>
+      </section>
 
-<ul>
-  <li><strong>REFERENCES</strong>: Comma-separated list of dependency numbers, or empty for none.</li>
-  <li><strong>LINE_NUMBER</strong>: The current line number in the proof.</li>
-  <li><strong>FORMULA</strong>: A logical formula using the connectives below.</li>
-  <li><strong>JUSTIFICATION</strong>: Rule name (and possibly references) explaining the step.</li>
-</ul>
+      <div class="grid">
+        <section id="proof">
+          <h2>Proof Checker</h2>
+          <p>Paste a proof in <span class="pill">pipe format</span> (one step per line)</p>
+<pre><code>1 | 1 | P | A
+2 | 1 | Q | A
+3 | 1 | P &amp; Q | 1,2 &amp;I
+</code></pre>
+          <div class="tips small">
+            <ul>
+              <li>Rules can use short labels like <code>EE</code>, <code>EI</code>, <code>UI</code>, <code>UE</code> (or long forms).</li>
+              <li>Errors appear per-line with messages; an overall VALID/INVALID badge is shown.</li>
+              <li>Dependencies go in the middle column (e.g. <code>1,2</code>).</li>
+            </ul>
+          </div>
+          <p><a href="/proof">Open the Proof Checker →</a></p>
+        </section>
 
-<h3>Example</h3>
-<pre>
-1|1|P→∀xF(x)|A
-2|2|P|A
-1,2|3|∀xF(x)|1,2 MP
-1,2|4|F(a)|3 ∀E
-1|5|P→F(a)|2,4 CP
-1|6|∀x(P→F(x))|5 ∀I
-</pre>
+        <section id="model">
+          <h2>Model Checker</h2>
+          <p>Build a finite structure and evaluate a closed sentence in it.</p>
+          <div class="tips small">
+            <ul>
+              <li><strong>Domain</strong>: comma-separated elements (e.g. <code>a,b,c</code>).</li>
+              <li><strong>Constants</strong>: map to elements (e.g. <code>c = a</code>).</li>
+              <li><strong>Symbols</strong>: add rows with a name, an arity (0–3), and an extension:
+                <ul>
+                  <li>Arity 0: <code>T</code> or <code>F</code> (propositional constant).</li>
+                  <li>Arity 1: list of elements (e.g. <code>a,b</code>).</li>
+                  <li>Arity 2–3: tuples in angle brackets (e.g. <code>&lt;a,b&gt;</code>, <code>&lt;a,b,c&gt;</code>).</li>
+                </ul>
+              </li>
+              <li>Uninterpreted symbols produce a clear error (no “guessing”).</li>
+            </ul>
+          </div>
+<pre><code>Example sentence:
+Ax (Fx -> ∃y Rxy)
+</code></pre>
+          <p><a href="/model">Open the Model Checker →</a></p>
+        </section>
+      </div>
 
-<h2>2. Logical connectives</h2>
-<p>Use the following symbols in formulas:</p>
+      <section id="prop">
+        <h2>Truth Tables</h2>
+        <p>Enter a purely propositional sentence (only 0-ary symbols like <code>P, Q, R</code>—no predicates with arguments). The tool generates all valuations and the truth value of the sentence.</p>
+<pre><code>(P -> Q) v R
+~(P &amp; Q) -> (Q v R)
+</code></pre>
+        <div class="tips small">
+          <ul>
+            <li>If a non-propositional symbol is detected, you’ll get a “non_propositional” error.</li>
+            <li>The table header shows the pretty-printed sentence instead of “Value”.</li>
+            <li>ASCII forms like <code>-></code>, <code>~</code>, <code>/\</code>, <code>\/</code>, and words “and/or/not” all work.</li>
+          </ul>
+        </div>
+        <p><a href="/prop">Open the Truth-Table tool →</a></p>
+      </section>
 
-<ul>
-  <li><code>¬</code>  – negation</li>
-  <li><code>∧</code>  – conjunction (and)</li>
-  <li><code>∨</code>  – disjunction (or)</li>
-  <li><code>→</code>  – conditional (if … then)</li>
-  <li><code>↔</code>  – biconditional (if and only if)</li>
-  <li><code>∀x</code> – universal quantifier</li>
-  <li><code>∃x</code> – existential quantifier</li>
-</ul>
+      <section id="faq">
+        <h2>FAQ / Tips</h2>
+        <ul class="small">
+          <li><strong>Variables:</strong> you can use <code>x, y, z, x1</code>, etc. Quantifiers bind one variable at a time.</li>
+          <li><strong>Spacing:</strong> spaces around operators are optional. Parentheses work as usual.</li>
+          <li><strong>Shorthands:</strong> prefer <code>Ax</code>, <code>Ex</code> for speed; they normalize to <code>∀x</code>, <code>∃x</code>.</li>
+          <li><strong>Errors:</strong> messages reference the normalized input (post-shortcut), so your ASCII is translated first.</li>
+        </ul>
+      </section>
+    </div>
+  </main>
 
-<p>Predicates are uppercase letters followed by terms, e.g. <code>F(a)</code> or <code>Rxy</code>. Constants are lowercase letters (a, b, c, …), and variables are also lowercase.</p>
+  <footer>
+    &copy; 2025 Symbolic Logic Tools
+  </footer>
+</body>
+</html>
 
-<h2>3. Common justification abbreviations</h2>
-<ul>
-  <li><code>A</code> – Assumption</li>
-  <li><code>MP</code> – Modus Ponens</li>
-  <li><code>CP</code> – Conditional Proof</li>
-  <li><code>∀E</code> – Universal Elimination</li>
-  <li><code>∀I</code> – Universal Introduction</li>
-  <li><code>∃E</code> – Existential Elimination</li>
-  <li><code>∃I</code> – Existential Introduction</li>
-  <li><code>RAA</code> – Reductio ad Absurdum</li>
-</ul>
-
-<h2>4. Tips</h2>
-<ul>
-  <li>Each formula must be well-formed according to the syntax rules above.</li>
-  <li>Whitespace is ignored in most places.</li>
-  <li>Make sure dependencies and line numbers match your intended scope.</li>
-</ul>
-
-<p><a href="index.html">⬅ Back to checker</a></p>

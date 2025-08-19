@@ -68,33 +68,6 @@ reportToJSON reps =
     ]
 
 --------------------------------------------------------------------------------
--- Auth guard: require matching class code (if SECRET_TOKEN is set)
---------------------------------------------------------------------------------
-
--- Try header first, then form field "code"
-getProvidedCode :: ActionM (Maybe String)
-getProvidedCode = do
-  mh <- header "X-Class-Code"
-  case mh of
-    Just t | not (TL.null (TL.strip t)) -> pure (Just (TL.unpack (TL.strip t)))
-    _ -> rescue (Just <$> param "code") (const (pure Nothing))
-         >>= \mt -> pure (fmap (TL.unpack . TL.strip) mt)
-
-authGuard :: Maybe String -> ActionM ()
-authGuard Nothing = pure ()  -- no secret set => open access
-authGuard (Just secret) = do
-  mProvided <- getProvidedCode
-  case mProvided of
-    Just provided | provided == secret -> pure ()
-    _ -> do
-      status status401
-      json $ object
-        [ "status" .= ("unauthorized" :: String)
-        , "error"  .= ("Missing or invalid class code. Provide it in header X-Class-Code or form field 'code'." :: String)
-        ]
-      finish
-
---------------------------------------------------------------------------------
 -- Model checker request type (JSON)
 --------------------------------------------------------------------------------
 
@@ -119,9 +92,6 @@ main = do
   mPort   <- lookupEnv "PORT"
   let port = maybe 8080 id (mPort >>= readMaybe)
 
-  -- Read the shared class code once (optional)
-  mSecret <- lookupEnv "SECRET_TOKEN"
-
   scotty port $ do
     -- Simple request logging
     middleware logStdoutDev
@@ -135,6 +105,8 @@ main = do
     -- Landing page (proof checker)
     get "/" $ file "static/index.html"
 
+    get "/proof" $ file "static/proof.html"
+
     -- Instructions page
     get "/instructions" $ file "static/instructions.html"
 
@@ -146,10 +118,6 @@ main = do
 
     -- Proof checking endpoint
     post "/check" $ do
-      -- enforce class code (if configured)
-      authGuard mSecret
-
-      -- quick size guard
       req <- request
       case requestBodyLength req of
         KnownLength n | n > fromIntegral maxBodyBytes -> do
@@ -161,7 +129,7 @@ main = do
           finish
         _ -> pure ()
 
-      -- accept form field or raw body
+  -- accept form field or raw body
       mProof <- rescue (Just <$> param "proof") (const (pure Nothing))
       raw    <- body
       let inputTxt =
@@ -179,7 +147,7 @@ main = do
                            " lines; limit is " ++ show maxProofLines :: String)
             ]
         else
-          case parsePipeProof inputTxt of
+          case parsePipeProof (normalizeSyntax inputTxt) of
             Left perr -> do
               status status400
               json $ object
@@ -193,11 +161,9 @@ main = do
                 , "report" .= reportToJSON reps
                 ]
 
+
     -- Model checking endpoint (JSON)
     post "/model/check" $ do
-      -- enforce class code (if configured)
-      authGuard mSecret
-
       raw <- body
       case A.eitherDecode' raw of
         Left e -> do
@@ -231,9 +197,6 @@ main = do
 
     -- Propositional truth table endpoint (JSON)
     post "/prop/table" $ do
-      -- enforce class code (if configured)
-      authGuard mSecret
-
       raw <- body
       case A.eitherDecode' raw of
         Left e -> do

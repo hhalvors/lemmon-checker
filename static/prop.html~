@@ -1,0 +1,97 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>lemmon-checker — Truth Table</title>
+<style>
+  body{font-family:system-ui,Segoe UI,Arial;margin:2rem;max-width:900px}
+  .card{border:1px solid #ddd;border-radius:10px;padding:1rem}
+  textarea, input { width:100%; font-family:ui-monospace,Menlo,Consolas,monospace; }
+  textarea{height:6rem}
+  button{padding:.5rem 1rem}
+  table{border-collapse:collapse;margin-top:1rem;width:100%}
+  th,td{border:1px solid #ddd;padding:.35rem .6rem;text-align:center}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+  .bad{color:#b00020;font-weight:600}
+</style>
+
+<h1>Truth Table</h1>
+<p>Enter a propositional sentence (only 0-ary symbols like <code>P,Q,R</code>; no predicates with arguments). Examples:
+  <span class="mono">P -> ~(Q & R)</span>,
+  <span class="mono">A v (B & C)</span>.</p>
+
+<div class="card">
+  <label for="sentence"><strong>Sentence</strong></label>
+  <textarea id="sentence" placeholder="P -> ~(Q & R)"></textarea>
+  <div style="display:flex;gap:.75rem;align-items:center;margin-top:.5rem;">
+    <label class="mono" style="flex:1;">Class code (optional):
+      <input id="code" placeholder="">
+    </label>
+    <button id="run" style="flex:none;">Build table</button>
+    <span id="spinner" style="display:none;">Working…</span>
+  </div>
+  <div id="out" style="margin-top:1rem;"></div>
+</div>
+
+<p style="margin-top:1rem;"><a href="/">← back to proof checker</a> · <a href="/model">Model checker</a></p>
+
+<script>
+const byId = id => document.getElementById(id);
+const runBtn = byId('run');
+const out = byId('out');
+const spinner = byId('spinner');
+
+runBtn.addEventListener('click', async () => {
+  out.innerHTML = '';
+  spinner.style.display = 'inline';
+  try {
+    const sentence = byId('sentence').value.trim();
+    if (!sentence) throw new Error('Please enter a sentence.');
+
+    const headers = { 'Content-Type': 'application/json' };
+    const code = byId('code').value.trim();
+    if (code) headers['X-Class-Code'] = code;
+
+    const res = await fetch('/prop/table', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ sentenceText: sentence })
+    });
+
+    const data = await res.json();
+
+    if (data.status !== 'ok') {
+      out.innerHTML = `<p class="bad">${data.status}: ${data.error || 'Unknown error'}</p>`;
+      return;
+    }
+
+    // rows: [{ valuation: {"P": true, "Q": false, ...}, value: true }, ...]
+    const rows = data.rows || [];
+    if (rows.length === 0) { out.innerHTML = '<p>No rows returned.</p>'; return; }
+
+    // Collect and sort proposition names from valuations
+    const nameSet = new Set();
+    for (const r of rows) for (const k of Object.keys(r.valuation || {})) nameSet.add(k);
+    const names = Array.from(nameSet).sort();
+
+    // Build table
+    let html = '<table><thead><tr>';
+    for (const n of names) html += `<th>${n}</th>`;
+    html += '<th>Value</th></tr></thead><tbody>';
+
+    for (const r of rows) {
+      html += '<tr>';
+      for (const n of names) {
+        const b = !!r.valuation[n];
+        html += `<td>${b ? 'T' : 'F'}</td>`;
+      }
+      html += `<td>${r.value ? 'T' : 'F'}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    out.innerHTML = html;
+
+  } catch (e) {
+    out.innerHTML = `<p class="bad">${String(e)}</p>`;
+  } finally {
+    spinner.style.display = 'none';
+  }
+});
+</script>

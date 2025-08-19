@@ -1,105 +1,26 @@
-<!doctype html>
-<meta charset="utf-8"/>
-<title>lemmon-checker</title>
-<style>
-  body{font-family:system-ui,Segoe UI,Arial;margin:2rem;max-width:980px}
-  textarea{width:100%;height:12rem;font-family:ui-monospace,Menlo,Consolas,monospace}
-  button{padding:.5rem 1rem;margin-top:.5rem}
-  table{border-collapse:collapse;margin-top:1rem;width:100%}
-  th,td{border:1px solid #ddd;padding:.4rem .6rem;text-align:left;font-size:14px}
-  .ok{color:#167d36;font-weight:600}.bad{color:#b00020;font-weight:600}
-  .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
-  .row{display:flex;gap:1rem;align-items:center;margin:.25rem 0 .5rem}
-  .row input{padding:.35rem .5rem}
-  small.hint{color:#666}
-</style>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Symbolic Logic Tools</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Symbolic Logic Tools</h1>
+  </header>
 
-<h1>lemmon-checker (pipe format)</h1>
+  <main>
+    <h2>Select a Tool</h2>
+    <p>Welcome! Choose a tool to explore:</p>
+    <a href="/proof" class="button">Proof Checker</a>
+    <a href="/model" class="button">Model Checker</a>
+    <a href="/prop" class="button">Truth Table Generator</a>
+  </main>
 
-<form id="f">
-  <div class="row">
-    <label for="code"><strong>Class code</strong></label>
-    <input id="code" name="code" placeholder="" autocomplete="one-time-code">
-    <small class="hint">Saved in your browser; sent with each check.</small>
-  </div>
-  <textarea name="proof" placeholder="Paste your PROOF pipe text here"></textarea><br/>
-  <button>Check</button>
-</form>
-
-<div id="out"></div>
-
-<script>
-const f   = document.getElementById('f');
-const out = document.getElementById('out');
-const codeInput = document.getElementById('code');
-
-// preload saved code
-codeInput.value = localStorage.getItem('classCode') || '';
-codeInput.addEventListener('change', () => {
-  localStorage.setItem('classCode', codeInput.value.trim());
-});
-
-// helper: ensure we have a code (prompt once if empty)
-function getClassCode() {
-  let token = (codeInput.value || '').trim();
-  if (!token) {
-    token = (localStorage.getItem('classCode') || '').trim();
-  }
-  if (!token) {
-    token = prompt('Enter class code');
-    if (token) {
-      token = token.trim();
-      codeInput.value = token;
-      localStorage.setItem('classCode', token);
-    }
-  }
-  return token || '';
-}
-
-f.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const proof = new FormData(f).get('proof') || '';
-  const token = getClassCode();
-  if (!token) { out.innerHTML = "<p class='bad'>No class code provided.</p>"; return; }
-
-  out.innerHTML = '<p>Checking…</p>';
-  try {
-    const res = await fetch('/check', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8',
-        'X-Class-Code': token   // <-- sent to the server
-      },
-      body: proof
-    });
-    const data = await res.json();
-
-    if (data.status !== 'ok') {
-      const msg = (data.error || 'Unknown error').toString();
-      out.innerHTML = `<p class='bad'>${data.status.replaceAll('_',' ')}: ${msg}</p>`;
-      return;
-    }
-
-    const r = data.report;
-    const rows = r.lines.map(l => `
-      <tr>
-        <td class="mono">${l.line}</td>
-        <td class="mono">${l.deps.join(',') || '∅'}</td>
-        <td class="mono">${l.formulaPretty}</td>
-        <td class="mono">${l.justification}</td>
-        <td>${l.ok ? '<span class="ok">✅</span>' : '<span class="bad">❌</span>'}</td>
-        <td>${l.message ? l.message.replaceAll('\n','<br/>') : ''}</td>
-      </tr>`).join('');
-
-    out.innerHTML = `
-      <p><strong>Overall:</strong> ${r.valid ? '<span class="ok">VALID</span>' : '<span class="bad">INVALID</span>'}</p>
-      <table>
-        <thead><tr><th>Line</th><th>Deps</th><th>Formula</th><th>Justification</th><th>OK</th><th>Message</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>`;
-  } catch (err) {
-    out.innerHTML = `<p class='bad'>Network error: ${String(err)}</p>`;
-  }
-});
-</script>
+  <footer>
+    &copy; 2025 Symbolic Logic Tools
+  </footer>
+</body>
+</html>
 

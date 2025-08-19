@@ -1,343 +1,258 @@
-<!doctype html>
-<meta charset="utf-8" />
-<title>lemmon-checker — Model checker</title>
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<style>
-  :root{
-    --fg:#0a0a0a; --muted:#666; --ok:#167d36; --bad:#b00020; --line:#e5e7eb;
-    --pad:1rem; --rad:12px;
-  }
-  body{font-family:system-ui,Segoe UI,Arial; color:var(--fg); margin:2rem; max-width:1100px}
-  h1{margin:0 0 1rem 0}
-  .grid{display:grid; grid-template-columns:1fr 1fr; gap:1.25rem}
-  .card{border:1px solid var(--line); border-radius:var(--rad); padding:var(--pad)}
-  .muted{color:var(--muted)}
-  input, textarea{width:100%; font:14px/1.4 ui-monospace,Menlo,Consolas,monospace; padding:.5rem .6rem; border:1px solid var(--line); border-radius:8px}
-  textarea{min-height:7rem}
-  table{width:100%; border-collapse:collapse; margin-top:.5rem}
-  th,td{border-bottom:1px solid var(--line); padding:.5rem .6rem; text-align:left}
-  th{font-weight:700; background:#fafafa}
-  td:last-child, th:last-child{width:72px; text-align:right}
-  .row-btn{width:36px; height:36px; border-radius:999px; border:1px solid var(--line); background:white; font-size:18px; line-height:0; cursor:pointer}
-  .row-btn:active{transform:translateY(1px)}
-  .add-row td{border:none; background:transparent}
-  .ok{color:var(--ok); font-weight:600}
-  .bad{color:var(--bad); font-weight:600}
-  .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
-  .row{display:flex; gap:.75rem; align-items:center; flex-wrap:wrap}
-  .hint{font-size:13px}
-</style>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Model Checker</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* --- minimal page-local styles --- */
+    main { max-width: 1100px; margin: 0 auto; padding: 0 .75rem; }
 
-<h1>Model checker</h1>
-<p>Build a finite model and test whether one or more <em>closed</em> sentences are true in it.</p>
+    .card { background:#fff; border-radius:12px; box-shadow:0 1px 12px rgba(0,0,0,.06);
+            padding:1rem; margin:1rem 0; }
 
-<div class="grid">
-  <!-- Domain & constants ----------------------------------------------------->
-  <div class="card">
-    <h2>Domain</h2>
-    <label>Elements (comma-separated):</label>
-    <input id="domain" placeholder="a,b,c" value="a,b" />
-    <div class="muted hint">Example: <span class="mono">a,b,c</span></div>
+    .two { display:grid; gap:1rem; }
+    @media (min-width: 960px) { .two { grid-template-columns: 1fr 1fr; } }
 
-    <h2 style="margin-top:1.25rem">Constants</h2>
-    <table id="const-table">
-      <thead>
-        <tr><th>Constant</th><th>Denotes (domain element)</th><th></th></tr>
-      </thead>
-      <tbody>
-        <!-- rows inserted here -->
-        <tr class="add-row">
-          <td></td><td></td>
-          <td><button type="button" id="add-const" class="row-btn">＋</button></td>
-        </tr>
-      </tbody>
-    </table>
-    <div class="muted hint" style="margin-top:.5rem">
-      Format: <span class="mono">c</span> denotes <span class="mono">a</span>. Leave table empty if there are no constants.
+    h2 { margin:0 0 .5rem; }
+    .muted { color:#6b7280; }
+
+    input[type="text"], textarea {
+      width:100%; box-sizing:border-box;
+      font-size:1rem; padding:.6rem .75rem;
+      border:1px solid #cfcfd4; border-radius:.5rem;
+    }
+    textarea#sentence { min-height:8rem; font-family:ui-monospace, Menlo, Consolas, monospace; }
+
+    .grid-row { display:grid; gap:.5rem; align-items:center; }
+    /* constants: [const] [denotes] [−] */
+    .const-row { grid-template-columns: 1fr 1fr 44px; }
+    /* symbols: [name] [arity] [extension/value] [−] */
+    .sym-row   { grid-template-columns: 1fr 90px 1fr 44px; }
+    .sym-row input:nth-child(2){ text-align:center; }
+
+    .label-row { display:grid; gap:.5rem; font-weight:600; margin:.25rem 0; }
+    .label-const { grid-template-columns: 1fr 1fr 44px; }
+    .label-sym   { grid-template-columns: 1fr 90px 1fr 44px; }
+
+    .row-stack { display:grid; gap:.6rem; }  /* stacks rows vertically */
+
+    .btn { border:none; background:#3949ab; color:#fff; padding:.55rem .9rem;
+           border-radius:.6rem; cursor:pointer; }
+    .btn:disabled { opacity:.6; cursor:not-allowed; }
+    .btn-round { width:40px; height:40px; border-radius:10px; display:grid; place-items:center; font-weight:700; }
+
+    .btn-ghost { background:#eef2ff; color:#1f2a60; }
+
+    .add-wrap { display:flex; justify-content:flex-end; margin-top:.35rem; }
+
+    #out { margin-top:.75rem; font-size:1.05rem; }
+    .ok { color:#167d36; font-weight:600; } .bad{ color:#b00020; font-weight:600; }
+  </style>
+</head>
+<body>
+  <header><h1>Model Checker</h1></header>
+
+  <nav>
+    <a href="/">Home</a>
+    <a href="/proof">Proof Checker</a>
+    <a href="/model">Model Checker</a>
+    <a href="/prop">Truth Tables</a>
+    <a href="/instructions">Instructions</a>
+  </nav>
+
+  <main>
+    <div class="two">
+      <!-- Left: domain + constants -->
+      <section class="card">
+        <h2>Domain</h2>
+        <label class="muted">Elements (comma-separated):</label>
+        <input id="domain" placeholder="a, b, c" value="a,b" />
+        <div class="muted" style="margin-top:.25rem">Example: a , b , c</div>
+
+        <h2 style="margin-top:1rem">Constants</h2>
+        <div class="label-row label-const"><div>Constant</div><div>Denotes (domain element)</div><div></div></div>
+        <div id="constRows" class="row-stack"></div>
+        <div class="add-wrap"><button id="addConst" class="btn btn-round">+</button></div>
+        <div class="muted" style="margin-top:.5rem">Format: <code>c</code> denotes element <code>a</code>. Leave empty if none.</div>
+      </section>
+
+      <!-- Right: symbols -->
+      <section class="card">
+        <h2>Symbols</h2>
+        <div class="label-row label-sym"><div>Symbol</div><div>Arity</div><div>Extension / Value</div><div></div></div>
+        <div id="symRows" class="row-stack"></div>
+        <div class="add-wrap"><button id="addSym" class="btn btn-round">+</button></div>
+
+        <p class="muted" style="margin-top:.5rem">
+          Arity 0: enter <b>T</b> or <b>F</b> (propositional constant).<br/>
+          Arity 1: elements, e.g. <code>a,b</code> (unary predicate).<br/>
+          Arity 2–3: tuples, e.g. <code>&lt;a,b&gt;</code>, <code>&lt;b,a&gt;</code> or <code>&lt;a,b,c&gt;</code>, <code>&lt;b,c,a&gt;</code>.
+        </p>
+      </section>
     </div>
-  </div>
 
-  <!-- Relation symbols (unified: arity 0/1/2-3) ----------------------------->
-  <div class="card">
-    <h2>Relation symbols</h2>
-    <table id="rel-table">
-      <thead>
-        <tr><th>Symbol</th><th>Arity</th><th>Extension</th><th></th></tr>
-      </thead>
-      <tbody>
-        <!-- sample rows -->
-        <tr>
-          <td><input placeholder="P" value="P" /></td>
-          <td><input placeholder="0" value="0" /></td>
-          <td><input placeholder="T" value="T" /></td>
-          <td><button type="button" class="row-btn" onclick="removeRow(this)">−</button></td>
-        </tr>
-        <tr>
-          <td><input placeholder="F" value="F" /></td>
-          <td><input placeholder="1" value="1" /></td>
-          <td><input placeholder="a,b" value="a" /></td>
-          <td><button type="button" class="row-btn" onclick="removeRow(this)">−</button></td>
-        </tr>
-        <tr>
-          <td><input placeholder="R" value="R" /></td>
-          <td><input placeholder="2" value="2" /></td>
-          <td><input placeholder="<a,b>, <b,a>" value="<a,b>" /></td>
-          <td><button type="button" class="row-btn" onclick="removeRow(this)">−</button></td>
-        </tr>
+    <!-- Sentence -->
+    <section class="card">
+      <h2>Sentence</h2>
+      <textarea id="sentence" placeholder="∀x (F x → ∃y R x y)"></textarea>
+      <div style="display:flex; gap:.75rem; align-items:center; margin-top:.75rem">
+        <button id="run" class="btn">Check</button>
+        <span id="spinner" class="muted" style="display:none">Checking…</span>
+      </div>
+      <div id="out"></div>
+      <div class="muted" style="margin-top:.5rem">
+        ASCII shorthands OK: <code>-></code> (→), <code>~</code> (¬), <code>/\</code> (∧), <code>\/</code> (∨), or “and/or/not”.
+      </div>
+    </section>
+  </main>
 
-        <!-- aligned + button in last column -->
-        <tr class="add-row">
-          <td></td><td></td><td></td>
-          <td><button type="button" id="add-rel" class="row-btn">＋</button></td>
-        </tr>
-      </tbody>
-    </table>
+  <footer>&copy; 2025 Symbolic Logic Tools</footer>
 
-    <div class="muted hint" style="margin-top:.6rem">
-      Arity <strong>0</strong>: enter <span class="mono">T</span> or <span class="mono">F</span> (propositional constant).<br/>
-      Arity <strong>1</strong>: elements, e.g. <span class="mono">a,b</span> (unary predicate).<br/>
-      Arity <strong>2–3</strong>: tuples, e.g. <span class="mono">&lt;a,b&gt;</span>, <span class="mono">&lt;b,a&gt;</span> or <span class="mono">&lt;a,b,c&gt;</span>.
-    </div>
-  </div>
-</div>
+  <script>
+    // ---------- helpers ----------
+    const $ = id => document.getElementById(id);
+    const mk = (tag, cls) => { const n = document.createElement(tag); if (cls) n.className = cls; return n; };
+    const trim = s => (s || '').trim();
 
-<!-- Sentences & run ------------------------------------------------------------>
-<div class="card" style="margin-top:1rem">
-  <h2>Sentences</h2>
-  <textarea id="sentences" placeholder="∀x(Fx → ∃y Rxy),  ∀x(Fx ∧ Gx)"></textarea>
-  <div class="muted hint">Enter one or more sentences (comma-separated or one per line).</div>
+    // split on commas but ignore those inside <...>
+    function splitCSVRespectAngles(s){
+      const out = []; let buf = ''; let depth = 0;
+      for (const ch of s){
+        if (ch === '<') { depth++; buf += ch; }
+        else if (ch === '>') { depth = Math.max(0, depth-1); buf += ch; }
+        else if (ch === ',' && depth === 0) { if (buf.trim()) out.push(buf.trim()); buf = ''; }
+        else { buf += ch; }
+      }
+      if (buf.trim()) out.push(buf.trim());
+      return out;
+    }
 
-  <div class="row" style="margin-top:.75rem">
-    <label>Class code (optional):
-      <input id="code" placeholder="" style="width:240px" />
-    </label>
-    <label><input id="sendHeader" type="checkbox" checked /> Send code in header <span class="mono">X-Class-Code</span></label>
-  </div>
+    // ---------- rows ----------
+    function addConstRow(c = '', v = ''){
+      const row = mk('div', 'grid-row const-row');
+      const ci = mk('input'); ci.type = 'text'; ci.placeholder = 'c'; ci.value = c;
+      const vi = mk('input'); vi.type = 'text'; vi.placeholder = 'a'; vi.value = v;
+      const rm = mk('button', 'btn btn-ghost btn-round'); rm.type = 'button'; rm.textContent = '−';
+      rm.onclick = () => row.remove();
+      row.append(ci, vi, rm);
+      $('constRows').append(row);
+    }
 
-  <div class="row" style="margin-top:.75rem">
-    <button id="run">Check</button>
-    <span id="spinner" class="muted" style="display:none">Checking…</span>
-  </div>
+    function addSymRow(name = '', ar = 1, ext = ''){
+      const row = mk('div', 'grid-row sym-row');
+      const s  = mk('input'); s.type = 'text'; s.placeholder = 'P / F / R'; s.value = name;
+      const a  = mk('input'); a.type = 'text'; a.placeholder = '0..3'; a.value = String(ar);
+      const e  = mk('input'); e.type = 'text'; e.placeholder = 'T  |  a,b  |  <a,b>, <b,a>'; e.value = ext;
+      const rm = mk('button', 'btn btn-ghost btn-round'); rm.type = 'button'; rm.textContent = '−';
+      rm.onclick = () => row.remove();
+      row.append(s, a, e, rm);
+      $('symRows').append(row);
+    }
 
-  <div id="out" style="margin-top:1rem"></div>
-</div>
+    // ---------- parse ----------
+    function parseDomain(){
+      const raw = trim($('domain').value);
+      return splitCSVRespectAngles(raw.replace(/\s+/g, '')).filter(Boolean);
+    }
 
-<p><a href="/">← back to proof checker</a></p>
-
-<script>
-  // ---------- small helpers ----------
-  const byId = id => document.getElementById(id);
-  const trim = s => (s||"").trim();
-
-  function removeRow(btn){
-    const tr = btn.closest('tr');
-    const tbody = tr.parentElement;
-    // don't remove the add-row
-    if(!tr.classList.contains('add-row')) tbody.removeChild(tr);
-  }
-
-  function addConstRow(){
-    const tbody = byId('const-table').querySelector('tbody');
-    const addRow = tbody.querySelector('tr.add-row');
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><input placeholder="c"/></td>
-      <td><input placeholder="a"/></td>
-      <td><button type="button" class="row-btn" onclick="removeRow(this)">−</button></td>
-    `;
-    tbody.insertBefore(tr, addRow);
-  }
-
-  function addRelRow(){
-    const tbody = byId('rel-table').querySelector('tbody');
-    const addRow = tbody.querySelector('tr.add-row');
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><input placeholder="S"/></td>
-      <td><input placeholder="2"/></td>
-      <td><input placeholder="&lt;a,b&gt;"/></td>
-      <td><button type="button" class="row-btn" onclick="removeRow(this)">−</button></td>
-    `;
-    tbody.insertBefore(tr, addRow);
-  }
-
-  byId('add-const').addEventListener('click', addConstRow);
-  byId('add-rel').addEventListener('click', addRelRow);
-
-  // ---------- parsing ----------
-  function parseCSV(s){
-    return s.split(',').map(x=>x.trim()).filter(Boolean);
-  }
-
-  // Parse tuples like "<a,b>, <b,a>" or "<a,b,c>"
-  function parseTupleList(text){
-    const s = text.trim();
-    if(!s) return [];
-    const tuples = [];
-    let i=0;
-    while(i < s.length){
-      while(i<s.length && /\s|,/.test(s[i])) i++;
-      if(i>=s.length) break;
-      if(s[i] !== '<') throw new Error('Expected "<" to start a tuple at: ' + s.slice(i));
-      i++; const cur=[];
-      let token="";
-      let expectSepOrEnd=false;
-      while(i<s.length && s[i] !== '>'){
-        const ch = s[i];
-        if(ch === ','){
-          if(token==="") throw new Error('Empty item in tuple');
-          cur.push(token.trim()); token=""; expectSepOrEnd=false; i++; continue;
+    function parseExtension(arity, text){
+      const t = trim(text);
+      if (arity === 0){
+        const up = t.toUpperCase();
+        if (up === 'T' || up === 'TRUE')  return { tuples: [[]] };
+        if (up === 'F' || up === 'FALSE' || up === '') return { tuples: [] };
+        throw new Error('Arity 0 expects T or F.');
+      }
+      if (arity === 1){
+        const elems = splitCSVRespectAngles(t).filter(Boolean);
+        return { tuples: elems.map(x => [x]) };
+      }
+      if (arity === 2 || arity === 3){
+        const tuples = [];
+        let i = 0;
+        while (i < t.length){
+          while (i < t.length && /[\s,]/.test(t[i])) i++;
+          if (i >= t.length) break;
+          if (t[i] !== '<') throw new Error(`Expected "<" starting a ${arity}-tuple.`);
+          i++; let depth = 1, buf = '';
+          while (i < t.length && depth > 0){
+            if (t[i] === '<') { depth++; buf += t[i++]; }
+            else if (t[i] === '>') { depth--; if (depth > 0) buf += t[i]; i++; }
+            else { buf += t[i++]; }
+          }
+          const xs = buf.split(',').map(x => x.trim()).filter(Boolean);
+          if (xs.length !== arity) throw new Error(`Tuple <${buf}> has arity ${xs.length}, expected ${arity}.`);
+          tuples.push(xs);
         }
-        token += ch; i++; expectSepOrEnd=true;
+        return { tuples };
       }
-      if(i>=s.length || s[i] !== '>') throw new Error('Unterminated tuple');
-      if(token.trim()!=="") cur.push(token.trim());
-      tuples.push(cur);
-      i++; // past '>'
-      while(i<s.length && /\s|,/.test(s[i])) i++;
+      throw new Error('Arity must be 0,1,2, or 3.');
     }
-    return tuples;
-  }
 
-  function collectConstants(){
-    const rows = [...byId('const-table').querySelectorAll('tbody tr')].filter(tr=>!tr.classList.contains('add-row'));
-    const m = {};
-    for(const tr of rows){
-      const [c,v] = [...tr.querySelectorAll('input')].map(n=>trim(n.value));
-      if(!c && !v) continue;
-      if(!c || !v) throw new Error('Constant rows must have both name and element');
-      m[c]=v;
-    }
-    return m;
-  }
+    function buildModel(){
+      const domain = parseDomain();
+      if (!domain.length) throw new Error('Domain must not be empty.');
 
-  function collectRelations(){
-    const rows = [...byId('rel-table').querySelectorAll('tbody tr')].filter(tr=>!tr.classList.contains('add-row'));
-    const propInterp = {};
-    const predInterp = [];
-    for(const tr of rows){
-      const [nameEl, arEl, extEl] = tr.querySelectorAll('input');
-      const name = trim(nameEl.value);
-      const arity = parseInt(trim(arEl.value), 10);
-      const ext  = trim(extEl.value);
-      if(!name && !ext && isNaN(arity)) continue;
-      if(!name || isNaN(arity)) throw new Error('Each relation row needs a symbol and an arity');
-
-      if(arity === 0){
-        if(!/^[TF]$/i.test(ext)) throw new Error(`Value for 0-ary ${name} must be T or F`);
-        propInterp[name] = /^[T]$/i.test(ext);
-      }else if(arity === 1){
-        const els = parseCSV(ext);
-        predInterp.push({ name, arity: 1, tuples: els.map(e=>[e]) });
-      }else if(arity === 2 || arity === 3){
-        const tups = parseTupleList(ext);
-        if(!tups.every(t => t.length === arity)){
-          throw new Error(`${name}: every tuple must have arity ${arity}`);
-        }
-        predInterp.push({ name, arity, tuples: tups });
-      }else{
-        throw new Error('Only arities 0–3 supported');
-      }
-    }
-    return { propInterp, predInterp };
-  }
-
-  function buildModel(){
-    const domain = parseCSV(byId('domain').value);
-    if(domain.length===0) throw new Error('Domain must not be empty.');
-    const constInterp = collectConstants();
-    const { propInterp, predInterp } = collectRelations();
-    return { domain, constInterp, propInterp, predInterp };
-  }
-
-  function parseSentences(){
-  const raw = byId('sentences').value;
-
-  function splitSentences(raw) {
-    const out = [];
-    let buf = '';
-    let paren = 0, bracket = 0, angle = 0;
-
-    const push = () => {
-      const s = buf.trim();
-      if (s) out.push(s);
-      buf = '';
-    };
-
-    for (const ch of raw) {
-      if (ch === '(') { paren++; buf += ch; continue; }
-      if (ch === ')') { paren = Math.max(0, paren - 1); buf += ch; continue; }
-      if (ch === '[') { bracket++; buf += ch; continue; }
-      if (ch === ']') { bracket = Math.max(0, bracket - 1); buf += ch; continue; }
-      if (ch === '<') { angle++; buf += ch; continue; }
-      if (ch === '>') { angle = Math.max(0, angle - 1); buf += ch; continue; }
-
-      // newline always ends a sentence
-      if (ch === '\n' || ch === '\r') { push(); continue; }
-
-      // commas and semicolons split sentences only when not nested
-      if ((ch === ',' || ch === ';') && paren === 0 && bracket === 0 && angle === 0) {
-        push(); continue;
+      // constants
+      const constInterp = {};
+      for (const row of $('constRows').children){
+        const c = trim(row.children[0].value);
+        const v = trim(row.children[1].value);
+        if (c && v) constInterp[c] = v;
+        else if (c || v) throw new Error('Each constant row needs both a name and a denotation.');
       }
 
-      buf += ch;
+      // predicates (including 0-ary)
+      const predInterp = [];
+      for (const row of $('symRows').children){
+        const name = trim(row.children[0].value);
+        if (!name) continue;
+        const ar = parseInt(row.children[1].value || '0', 10);
+        if (!(ar >= 0 && ar <= 3)) throw new Error('Arity must be an integer in 0..3.');
+        const ext = row.children[2].value;
+        const { tuples } = parseExtension(ar, ext);
+        predInterp.push({ name, arity: ar, tuples });
+      }
+
+      return { domain, constInterp, predInterp };
     }
-    push();
-    return out;
-  }
 
-  const parts = splitSentences(raw);
-  if (parts.length === 0) throw new Error('Please enter at least one sentence.');
-  return parts;
-}
-  
-  // ---------- run ----------
-  const runBtn  = byId('run');
-  const spinner = byId('spinner');
-  const out     = byId('out');
+    // ---------- wire up ----------
+    $('addConst').onclick = () => addConstRow();
+    $('addSym').onclick   = () => addSymRow();
 
-  runBtn.addEventListener('click', async () => {
-    out.innerHTML=""; spinner.style.display="inline";
-    try{
-      const model = buildModel();
-      const sentences = parseSentences();
-      const headers = { "Content-Type": "application/json" };
-      const code = trim(byId('code').value);
-      if(code && byId('sendHeader').checked) headers["X-Class-Code"] = code;
+    // seed a few friendly rows
+    addConstRow('c', 'a');
+    addSymRow('P', 0, 'T');
+    addSymRow('F', 1, 'a');
+    addSymRow('R', 2, '<a,b>');
 
-      // query server for each sentence (simple loop to keep server interface unchanged)
-      const results = [];
-      for(const phi of sentences){
-        const payload = { model, sentenceText: phi };
-        const res = await fetch('/model/check', { method:'POST', headers, body: JSON.stringify(payload) });
+    $('run').onclick = async () => {
+      const out = $('out'), spinner = $('spinner');
+      out.innerHTML = ''; spinner.style.display = 'inline';
+      try {
+        const model = buildModel();
+        const sentenceText = trim($('sentence').value);
+        if (!sentenceText) throw new Error('Please enter a sentence.');
+        const res = await fetch('/model/check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model, sentenceText })
+        });
         const data = await res.json();
-        results.push({ phi, data });
-      }
-
-      // render results
-      const rows = results.map(({phi, data}) => {
-        if(data.status === 'ok'){
-          return `<tr>
-            <td class="mono">${phi}</td>
-            <td>${data.value ? '<span class="ok">TRUE</span>' : '<span class="bad">FALSE</span>'}</td>
-          </tr>`;
-        }else{
-          const msg = (data.error || data.status || 'error').toString().replaceAll('&','&amp;').replaceAll('<','&lt;');
-          return `<tr>
-            <td class="mono">${phi}</td>
-            <td class="bad">${msg}</td>
-          </tr>`;
+        if (data.status === 'ok') {
+          out.innerHTML = `Result: ${data.value ? '<span class="ok">TRUE</span>' : '<span class="bad">FALSE</span>'}`;
+        } else {
+          out.innerHTML = `<span class="bad">${data.status.replaceAll('_',' ')}: ${data.error || 'Unknown error'}</span>`;
         }
-      }).join('');
+      } catch (e) {
+        out.innerHTML = `<span class="bad">${e.message || e}</span>`;
+      } finally {
+        spinner.style.display = 'none';
+      }
+    };
+  </script>
+</body>
+</html>
 
-      out.innerHTML = `<table>
-        <thead><tr><th>Sentence</th><th>Result</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>`;
-    }catch(e){
-      out.innerHTML = `<p class="bad">${String(e)}</p>`;
-    }finally{
-      spinner.style.display="none";
-    }
-  });
-</script>
