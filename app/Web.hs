@@ -9,7 +9,8 @@ import           PipeParse                       (parsePipeProof)
 import           PrettyPrint                     (renderFormula)
 import           FormulaParser                   (parseFormula)
 import           ModelSemantics                  (Model, evalClosed)
-import           Normalize                       (normalizeSyntax)   -- NEW
+import           Normalize                       (normalizeSyntax)
+import           TruthTable                      (truthTable)
 
 -- Web stack
 import           Web.Scotty
@@ -23,7 +24,9 @@ import           System.Environment              (lookupEnv)
 import           Text.Read                       (readMaybe)
 import           Data.Aeson                      (Value(..), object, (.=))
 import qualified Data.Aeson                     as A
+import qualified Data.Aeson.Types               as AT  -- for parseEither
 import qualified Data.Set                       as Set
+import qualified Data.Map.Strict                as M
 import qualified Data.Text.Lazy                 as TL
 import qualified Data.Text.Lazy.Encoding        as TLE
 import qualified Data.ByteString.Lazy           as BL
@@ -112,7 +115,7 @@ instance A.FromJSON ModelCheckReq where
 
 main :: IO ()
 main = do
-  -- Respect $PORT in prod (Fly sets it). Default to 8080 locally.
+  -- Respect $PORT in prod (platform sets it). Default to 8080 locally.
   mPort   <- lookupEnv "PORT"
   let port = maybe 8080 id (mPort >>= readMaybe)
 
@@ -120,7 +123,7 @@ main = do
   mSecret <- lookupEnv "SECRET_TOKEN"
 
   scotty port $ do
-    -- Simple request logging (great for “nothing happens” debugging)
+    -- Simple request logging
     middleware logStdoutDev
 
     -- Serve /static/* from ./static and allow root to read from it too
@@ -135,8 +138,11 @@ main = do
     -- Instructions page
     get "/instructions" $ file "static/instructions.html"
 
-    -- Model builder page (new)
+    -- Model builder page
     get "/model" $ file "static/model.html"
+
+    -- Truth table page
+    get "/prop" $ file "static/prop.html"
 
     -- Proof checking endpoint
     post "/check" $ do
@@ -174,11 +180,11 @@ main = do
             ]
         else
           case parsePipeProof inputTxt of
-            Left err -> do
+            Left perr -> do
               status status400
               json $ object
                 [ "status" .= ("parse_error" :: String)
-                , "error"  .= err
+                , "error"  .= perr
                 ]
             Right proof -> do
               let reps = LC.checkProof proof
@@ -201,7 +207,7 @@ main = do
             , "error"  .= e
             ]
         Right (ModelCheckReq m sTxt) ->
-          -- NEW: normalize ASCII shorthands before parsing
+          -- normalize ASCII shorthands before parsing
           let sNorm = normalizeSyntax sTxt in
           case parseFormula sNorm of
             Left perr -> do
@@ -222,3 +228,64 @@ main = do
                     [ "status" .= ("ok" :: String)
                     , "value"  .= truth
                     ]
+
+    -- Propositional truth table endpoint (JSON)
+    post "/prop/table" $ do
+      -- enforce class code (if configured)
+      authGuard mSecret
+
+      raw <- body
+      case A.eitherDecode' raw of
+        Left e -> do
+          status status400
+          json $ object
+            [ "status" .= ("bad_json" :: String)
+            , "error"  .= e
+            ]
+
+        Right (A.Object o) -> do
+          -- pull "sentenceText" out of the JSON object
+          case AT.parseEither (\obj -> obj A..: "sentenceText") o of
+            Left e -> do
+              status status400
+              json $ object
+                [ "status" .= ("bad_json" :: String)
+                , "error"  .= e
+                ]
+            Right sTxt -> do
+              let sNorm = normalizeSyntax sTxt
+              case parseFormula sNorm of
+                Left perr -> do
+                  status status400
+                  json $ object
+                    [ "status" .= ("parse_error" :: String)
+                    , "error"  .= perr
+                    ]
+                Right phi ->
+                  case truthTable phi of
+                    Left err -> do
+                      status status400
+                      json $ object
+                        [ "status" .= ("non_propositional" :: String)
+                        , "error"  .= err
+                        ]
+                    Right rows -> do
+                      let phiStr = renderFormula phi
+                          enc (valMap, b) = object
+                            [ "valuation" .= M.fromList (M.toList valMap)
+                            , "value"     .= b
+                            ]
+                      json $ object
+                        [ "status" .= ("ok" :: String)
+                        , "header" .= phiStr
+                        , "rows"   .= map enc rows
+                        ]
+
+        Right _ -> do
+          status status400
+          json $ object
+            [ "status" .= ("bad_json" :: String)
+            , "error"  .= ("Expected JSON object with key \"sentenceText\"" :: String)
+            ]                    
+
+
