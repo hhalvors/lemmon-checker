@@ -114,6 +114,8 @@ main = do
     -- Model builder page
     get "/model" $ file "static/model.html"
 
+    get "/graph" $ file "static/graph.html"
+
     -- Truth table page
     get "/prop" $ file "static/prop.html"
 

@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Graphical Model Builder (relation R)</title>
+  <link rel="stylesheet" href="/style.css" />
+  <style>
+    .board-wrap { display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-start; }
+    .card.tight { padding:0.75rem; }
+    canvas { background:#fff; border-radius:12px; box-shadow:0 1px 12px rgba(0,0,0,.06); cursor:crosshair }
+    .legend { display:flex; gap:.5rem; flex-wrap:wrap; font-size:.95rem; }
+    .legend .pill { font-size:.85rem; border:1px solid #ddd; padding:.15rem .5rem; border-radius:999px; background:#fafafa }
+    .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+    .ok  { color:#167d36; font-weight:600; }
+    .bad { color:#b00020; font-weight:600; }
+    .model-view { font-size:.9rem; white-space:pre-wrap; max-width:520px; }
+    .toolbar { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Graphical Model Builder (relation <span class="mono">R</span>)</h1>
+  </header>
+
+  <nav>
+    <a href="/">Home</a>
+    <a href="/proof">Proof Checker</a>
+    <a href="/model">Model Checker</a>
+    <a href="/prop">Truth Tables</a>
+    <a href="/prop/dnf">DNF</a>
+    <a href="/instructions">Instructions</a>
+  </nav>
+
+  <main>
+    <div class="board-wrap">
+      <section class="card tight">
+        <canvas id="board" width="680" height="480"></canvas>
+        <div class="legend" style="margin-top:.6rem">
+          <span class="pill">Click empty space → add element</span>
+          <span class="pill">Drag from dot to dot → toggle R⟨x,y⟩</span>
+          <span class="pill">Shift+Drag → toggle R⟨y,x⟩</span>
+          <span class="pill">Click arrow → delete arrow</span>
+          <span class="pill">Select node + <span class="mono">Delete/⌫</span> → delete node</span>
+          <span class="pill">Select node + <span class="mono">L</span> → toggle loop R⟨x,x⟩</span>
+        </div>
+      </section>
+
+      <section class="card" style="min-width: 320px; max-width: 520px;">
+        <h2>Sentence</h2>
+        <p class="hint">Use only the binary relation symbol <span class="mono">R</span> with the usual connectives/quantifiers.
+          ASCII like <span class="mono">-></span>, <span class="mono">~</span>, <span class="mono">/\</span>, <span class="mono">\/</span>, or the words “and/or/not/forall/exists” are fine.</p>
+
+        <textarea id="sentence" rows="4" placeholder="Example: ∀x∃y R x y"></textarea>
+
+        <div class="toolbar" style="margin-top:.75rem">
+          <button id="check" class="btn">Check</button>
+          <span id="spin" class="hint" style="display:none">Checking…</span>
+          <span id="result" class="status"></span>
+        </div>
+
+        <h3 style="margin-top:1rem">Current model (preview)</h3>
+        <div id="modelView" class="model-view mono"></div>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    &copy; 2025 Symbolic Logic Tools
+  </footer>
+
+  <script>
+    // ---------- helpers ----------
+    const $ = id => document.getElementById(id);
+    const board = $('board');
+    const ctx   = board.getContext('2d');
+
+    const GRID = 20;
+    const NODE_R = 10;
+    const HIT_R  = 14;
+    const EDGE_HIT = 8;         // px threshold for clicking an arrow
+    const EDGE_OFFSET = 8;      // px perpendicular spacing for bidirectional arrows
+    const LOOP_R = NODE_R + 18; // loop circle radius
+    const LOOP_HIT = 10;        // not used for click-delete; loop is toggled by "l"
+
+    const nodes = [];           // {name, x, y, loop:boolean}
+    const pairs = new Set();    // "a|b" for R<a,b> (non-loops; loops come from node.loop)
+    let selected = null;        // selected node for delete/toggle loop
+    let draggingFrom = null;    // node we started dragging from (to create/toggle arrow)
+
+    // --- drawing utils ---
+    function drawGrid(){
+      ctx.save();
+      ctx.clearRect(0,0,board.width,board.height);
+      ctx.fillStyle = "#fafbff";
+      ctx.fillRect(0,0,board.width,board.height);
+
+      ctx.strokeStyle = "#eef0f6";
+      ctx.lineWidth = 1;
+      for(let x=0; x<=board.width; x+=GRID){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,board.height); ctx.stroke(); }
+      for(let y=0; y<=board.height; y+=GRID){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(board.width,y); ctx.stroke(); }
+      ctx.restore();
+    }
+    const hypot = Math.hypot;
+
+    function unit(x,y){ const l=hypot(x,y)||1; return [x/l,y/l]; }
+    function perp(x,y){ return [-y,x]; }
+    function shorten(x1,y1,x2,y2,deltaStart,deltaEnd){
+      const dx=x2-x1, dy=y2-y1, L=hypot(dx,dy)||1;
+      const ux=dx/L, uy=dy/L;
+      return [ x1+ux*deltaStart, y1+uy*deltaStart, x2-ux*deltaEnd, y2-uy*deltaEnd ];
+    }
+
+    function drawArrowOffset(A,B,sign){
+      // sign: 0 = single arrow, +1 / -1 = parallel offset directions when both exist
+      let [x1,y1,x2,y2] = [A.x,A.y,B.x,B.y];
+
+      // parallel offset if needed
+      if (sign !== 0){
+        const dx = x2-x1, dy=y2-y1;
+        const [ux,uy] = unit(dx,dy);
+        const [px,py] = perp(ux,uy);
+        const off = EDGE_OFFSET * sign;
+        x1 += px*off; y1 += py*off;
+        x2 += px*off; y2 += py*off;
+      }
+
+      // trim so heads don't touch circles
+      [x1,y1,x2,y2] = shorten(x1,y1,x2,y2, NODE_R, NODE_R+2);
+
+      // line
+      ctx.beginPath();
+      ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+
+      // head
+      const dx=x2-x1, dy=y2-y1, L=hypot(dx,dy)||1;
+      const ux=dx/L, uy=dy/L;
+      const ah=8, aw=5;
+      ctx.beginPath();
+      ctx.moveTo(x2,y2);
+      ctx.lineTo(x2 - ux*ah - uy*aw, y2 - uy*ah + ux*aw);
+      ctx.lineTo(x2 - ux*ah + uy*aw, y2 - uy*ah - ux*aw);
+      ctx.closePath(); ctx.fill();
+    }
+
+    function drawLoop(n){
+  // A proper loop: an almost-full circle around the node,
+  // with a small gap reserved for the arrowhead on the NE side.
+  ctx.save();
+  ctx.strokeStyle = '#3f51b5';
+  ctx.fillStyle   = '#3f51b5';
+  ctx.lineWidth   = 2;
+  ctx.lineCap     = 'round';
+
+  const cx = n.x;
+  const cy = n.y;
+  const r  = LOOP_R;
+
+  // We draw CCW from `start` to `end`, leaving a small "gap" for the arrowhead.
+  // Place the gap near the NE quadrant so the head points down-right-ish.
+  const gap   = 0.55;                 // radians (~31.5°) – tweak to taste
+  const start = Math.PI * 0.85;       // ~153°
+  const end   = start + (Math.PI*2 - gap); // almost 360°, small gap for the head
+
+  // arc
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, start, end, false); // CCW (false) increases the angle
+  ctx.stroke();
+
+  // arrowhead at end of arc, oriented along the tangent
+  const hx = cx + r*Math.cos(end);
+  const hy = cy + r*Math.sin(end);
+  const tangent = end + Math.PI/2;    // tangent direction for CCW arc
+
+  const headLen = 9, spread = 0.4;
+  ctx.beginPath();
+  ctx.moveTo(hx, hy);
+  ctx.lineTo(
+    hx - headLen*Math.cos(tangent - spread),
+    hy - headLen*Math.sin(tangent - spread)
+  );
+  ctx.moveTo(hx, hy);
+  ctx.lineTo(
+    hx - headLen*Math.cos(tangent + spread),
+    hy - headLen*Math.sin(tangent + spread)
+  );
+  ctx.stroke();
+  ctx.restore();
+}
+
+    function drawNode(n){
+      // halo if selected
+      if (selected === n){
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, NODE_R+4, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(63,81,181,0.15)';
+        ctx.fill();
+      }
+      // body
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, NODE_R, 0, Math.PI*2);
+      ctx.fillStyle='#1f2937'; ctx.fill(); ctx.strokeStyle='#1f2937'; ctx.stroke();
+
+      // label
+      ctx.fillStyle='#fff';
+      ctx.font='12px ui-monospace, Menlo, Consolas, monospace';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(n.name, n.x, n.y+0.5);
+      ctx.fillStyle='#111';
+    }
+
+    // --- hit testing ---
+    function hitNode(px,py){
+      for(const n of nodes){
+        if (hypot(n.x-px,n.y-py) <= HIT_R) return n;
+      }
+      return null;
+    }
+
+    function pointSegDist(px,py, x1,y1,x2,y2){
+      const vx=x2-x1, vy=y2-y1;
+      const wx=px-x1, wy=py-y1;
+      const L2 = vx*vx+vy*vy || 1;
+      let t = (wx*vx+wy*vy)/L2;
+      t = Math.max(0, Math.min(1, t));
+      const cx = x1 + t*vx, cy = y1 + t*vy;
+      return hypot(px-cx, py-cy);
+    }
+
+    function bothDirections(a,b){ return pairs.has(`${a}|${b}`) && pairs.has(`${b}|${a}`); }
+
+    // returns key string if click is near a (non-loop) arrow; prefers closest match
+    function hitEdge(px,py){
+	let best = null;
+	let bestD = Infinity;
+
+	for (const key of pairs){
+	    const [a,b] = key.split('|');
+	    if (a === b) continue;                  // <-- skip loops here
+	    const A = nodes.find(n=>n.name===a); const B = nodes.find(n=>n.name===b);
+	    if(!A || !B) continue;
+            const hasBoth = bothDirections(a,b);
+            const candidates = hasBoth ? [+1,-1] : [0];
+
+        for(const sign of candidates){
+          // compute displayed segment (with offset and shortening)
+          let [x1,y1,x2,y2] = [A.x,A.y,B.x,B.y];
+          if(sign!==0){
+            const [ux,uy] = unit(x2-x1, y2-y1);
+            const [px2,py2] = [-uy,ux]; // perp
+            x1 += px2*EDGE_OFFSET*sign; y1 += py2*EDGE_OFFSET*sign;
+            x2 += px2*EDGE_OFFSET*sign; y2 += py2*EDGE_OFFSET*sign;
+          }
+          [x1,y1,x2,y2] = shorten(x1,y1,x2,y2, NODE_R, NODE_R+2);
+          const d = pointSegDist(px,py,x1,y1,x2,y2);
+          if(d < bestD && d <= EDGE_HIT){ bestD = d; best = key; }
+        }
+      }
+      return best; // null if none
+    }
+
+    // --- model state helpers ---
+    function autoName(){
+      const used = new Set(nodes.map(n=>n.name));
+      let idx = 0;
+      while(true){
+        const base = String.fromCharCode(97 + (idx % 26)); // a..z
+        const count = Math.floor(idx / 26);
+        const name = count === 0 ? base : base + String(count);
+        if(!used.has(name)) return name;
+        idx++;
+      }
+    }
+
+    function addNodeAt(x,y){
+      const name = autoName();
+      nodes.push({ name, x, y, loop:false });
+      selected = null;
+      render(); updatePreview();
+    }
+
+    function togglePair(a,b){
+      const key = `${a}|${b}`;
+      if(pairs.has(key)) pairs.delete(key); else pairs.add(key);
+      render(); updatePreview();
+    }
+
+    function deleteNode(n){
+      if(!n) return;
+      // remove all incident edges
+      for(const other of nodes){
+        pairs.delete(`${n.name}|${other.name}`);
+        pairs.delete(`${other.name}|${n.name}`);
+      }
+      // remove node
+      const i = nodes.indexOf(n);
+      if(i>=0) nodes.splice(i,1);
+      selected = null;
+      render(); updatePreview();
+    }
+
+    function buildModelJSON(){
+      const domain = nodes.map(n=>n.name);
+      const tuples = Array.from(pairs).map(k => k.split('|'));
+      // include loops from node flags
+      for(const n of nodes){ if(n.loop) tuples.push([n.name, n.name]); }
+      return {
+        domain,
+        constInterp: {},
+        predInterp: [ { name: "R", arity: 2, tuples } ]
+      };
+    }
+
+    function toggleLoop(n) {
+	n.loop = !n.loop;        // <- flip the node flag
+	render();
+	updatePreview();
+    }
+
+    function updatePreview(){
+      const m = buildModelJSON();
+      const lines = [];
+      lines.push(`Domain: { ${m.domain.join(', ')} }`);
+      const ext = m.predInterp[0].tuples.map(t => `<${t[0]},${t[1]}>`).join(', ');
+      lines.push(`R: { ${ext} }`);
+      $('modelView').textContent = lines.join('\n');
+    }
+
+    function groupEdges() {
+      // Map "lo|hi" -> {lo, hi, lo2hi:boolean, hi2lo:boolean}
+      const m = new Map();
+      for (const key of pairs) {
+        const [a, b] = key.split('|');
+	if (a === b) continue;
+        const lo = a < b ? a : b;
+        const hi = a < b ? b : a;
+        const dirLoHi = (a === lo); // true if this key is lo->hi
+        const g = m.get(`${lo}|${hi}`) || { lo, hi, lo2hi:false, hi2lo:false };
+        if (dirLoHi) g.lo2hi = true; else g.hi2lo = true;
+        m.set(`${lo}|${hi}`, g);
+      }
+      return m;
+    }
+
+    // --- rendering ---
+    function render(){
+      drawGrid();
+
+      // --- edges (direction-correct, parallel if bidirectional) ---
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#3f51b5';
+      ctx.fillStyle   = '#3f51b5';
+
+      const groups = groupEdges();
+      for (const g of groups.values()) {
+        const A = nodes.find(n => n.name === g.lo);
+        const B = nodes.find(n => n.name === g.hi);
+        if (!A || !B) continue;
+
+        if (g.lo2hi && g.hi2lo) {
+          // both directions: two rails, opposite offsets
+          drawArrowOffset(A, B, +1); // lo -> hi
+          drawArrowOffset(B, A, +1); // hi -> lo
+        } else if (g.lo2hi) {
+          drawArrowOffset(A, B, 0);
+        } else if (g.hi2lo) {
+          drawArrowOffset(B, A, 0);
+        }
+      }
+
+      // nodes + loops
+      for(const n of nodes){
+        if (n.loop) drawLoop(n);
+      }
+      for(const n of nodes){
+        drawNode(n);
+      }
+    }
+
+    function snap(v){ return Math.round(v/GRID)*GRID; }
+
+    // --- interactions ---
+    board.addEventListener('mousedown', (e) => {
+      const rect = board.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      // 1) click on existing (non-loop) arrow? delete it.
+      const hit = hitEdge(x,y);
+      if(hit){
+        pairs.delete(hit);
+        render(); updatePreview();
+        return;
+      }
+
+      // 2) node drag start or add node
+      const n = hitNode(x,y);
+      if(n){
+        draggingFrom = n;         // prepare to create/toggle an edge on mouseup
+        selected = n;             // also select for delete or loop toggle
+        render();
+      }else{
+        addNodeAt(snap(x), snap(y));
+      }
+    });
+
+    board.addEventListener('mouseup', (e) => {
+      if(!draggingFrom) return;
+      const rect = board.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const n = hitNode(x,y);
+      if(n && n !== draggingFrom){
+        const rev = e.shiftKey; // shift reverses
+        if(rev) togglePair(n.name, draggingFrom.name);
+        else    togglePair(draggingFrom.name, n.name);
+      }
+      draggingFrom = null;
+    });
+
+    document.addEventListener('keydown', (e) => {
+  // Ignore shortcuts while typing in a field
+	const t = e.target;
+	const typing =
+	      t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+	if (typing) return;
+
+  // Delete selected node
+	if ((e.key === 'Delete' || e.key === 'Backspace') && selected) {
+	    e.preventDefault();
+	    deleteNode(selected);
+	    return;
+	}
+
+  // Toggle self-loop on selected node
+	if ((e.key === 'l' || e.key === 'L') && selected) {
+	    e.preventDefault();
+	    toggleLoop(selected);   // must exist: adds/removes `${n.name}|${n.name}` in your pairs Set
+	    render();
+	    updatePreview();
+	}
+    });
+
+
+    // initial node (center)
+    addEventListener('DOMContentLoaded', () => {
+      const cx = snap(board.width/2);
+      const cy = snap(board.height/2);
+      nodes.push({ name: 'a', x: cx, y: cy, loop:false });
+      render(); updatePreview();
+    });
+
+    // --- checking ---
+    $('check').addEventListener('click', doCheck);
+    $('sentence').addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter'){ e.preventDefault(); doCheck(); }
+    });
+
+    async function doCheck(){
+      const sTxt = $('sentence').value.trim();
+      if(!sTxt){ $('result').innerHTML = '<span class="bad">Enter a sentence.</span>'; return; }
+      if(nodes.length === 0){ $('result').innerHTML = '<span class="bad">Domain must be non-empty.</span>'; return; }
+
+      $('spin').style.display = 'inline';
+      $('result').textContent = '';
+      try{
+        const payload = { model: buildModelJSON(), sentenceText: sTxt };
+        const res = await fetch('/model/check', {
+          method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if(data.status === 'ok'){
+          $('result').innerHTML = data.value ? '<span class="ok">TRUE</span>' : '<span class="bad">FALSE</span>';
+        }else{
+          $('result').innerHTML = `<span class="bad">${data.status}: ${data.error || 'Error'}</span>`;
+        }
+      }catch(err){
+        $('result').innerHTML = `<span class="bad">${String(err)}</span>`;
+      }finally{
+        $('spin').style.display = 'none';
+      }
+    }
+  </script>
+</body>
+</html>
