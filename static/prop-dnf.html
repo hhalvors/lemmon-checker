@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>DNF Converter</title>
+  <base href="/">
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .dnf-box {
+      margin-top: 1rem;
+      padding: .75rem 1rem;
+      background: #fafafa;
+      border: 1px solid #ddd;
+      border-radius: .5rem;
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+  </style>
+
+</head>
+<body>
+  <header>
+    <h1>Disjunctive Normal Form (DNF)</h1>
+  </header>
+
+  <nav>
+    <a href="/">Home</a>
+    <a href="/proof">Proof Checker</a>
+    <a href="/model">Model Checker</a>
+    <a href="/prop">Truth Tables</a>
+    <a href="/instructions">Instructions</a>
+  </nav>
+
+  <main>
+    <div class="row">
+      <div class="card">
+        <textarea id="sentence" placeholder="Example: (P → Q) ∨ R   or   (P -> Q) v R"></textarea>
+
+        <div class="controls" style="margin-top:1rem">
+          <button id="run" type="button">Convert to DNF</button>
+          <span id="spinner" class="hint" style="display:none">Working…</span>
+          <span class="hint" style="margin-left:.5rem">Tip: Ctrl/⌘ + Enter</span>
+        </div>
+
+        <div id="status" class="status" style="margin-top:.5rem"></div>
+
+        <div id="out" class="dnf-box" style="display:none"></div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    &copy; 2025 Symbolic Logic Tools
+  </footer>
+
+  <script>
+    const byId = id => document.getElementById(id);
+
+    async function run(){
+      const btn = byId('run');
+      const spinner = byId('spinner');
+      const status = byId('status');
+      const out = byId('out');
+
+      status.textContent = '';
+      status.className = 'status';
+      out.style.display = 'none';
+      out.textContent = '';
+
+      const sTxt = byId('sentence').value.trim();
+      if(!sTxt){
+        status.textContent = 'Please enter a sentence.';
+        status.classList.add('bad');
+        return;
+      }
+
+      btn.disabled = true; spinner.style.display = 'inline';
+
+      try{
+        const res = await fetch('/prop/dnf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sentenceText: sTxt })
+        });
+
+        let data;
+        try { data = await res.json(); }
+        catch { data = { status:'bad_json', error:'Non-JSON response from server.' }; }
+
+        if(data.status === 'ok'){
+          // Expect the server to return { status:"ok", dnf:"<pretty printed DNF>" }
+          out.textContent = data.dnf || '(empty)';
+          out.style.display = 'block';
+          status.textContent = 'Converted to DNF.';
+          status.classList.add('ok');
+        }else{
+          const msg = data.error || 'Unknown error';
+          status.innerHTML = `<span class="bad">${data.status}: ${msg}</span>`;
+        }
+      }catch(e){
+        status.innerHTML = `<span class="bad">${String(e)}</span>`;
+      }finally{
+        btn.disabled = false; spinner.style.display = 'none';
+      }
+    }
+
+    // Wire events after DOM is ready
+    document.addEventListener('DOMContentLoaded', () => {
+      const btn = byId('run');
+      if(btn){
+        btn.addEventListener('click', (e) => { e.preventDefault(); run(); });
+      }
+      // Ctrl/⌘ + Enter shortcut
+      const sentence = byId('sentence');
+      sentence.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter'){
+          e.preventDefault();
+          run();
+        }
+      });
+    });
+  </script>
+</body>
+</html>

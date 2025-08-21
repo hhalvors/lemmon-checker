@@ -1,7 +1,7 @@
 PROOF
-1|1|P→∀x.Fx|A
+1|1|P→∀xFx|A
 2|2|P|A
-1,2|3|∀x.Fx|1,2 MP
+1,2|3|∀xFx|1,2 MP
 1,2|4|Fa|3 ∀E
 1|5|P→Fa|2,4 CP
-1|6|∀x.(P→Fx)|5 ∀I
+1|6|∀x(P→Fx)|5 ∀I

@@ -11,6 +11,7 @@ import           FormulaParser                   (parseFormula)
 import           ModelSemantics                  (Model, evalClosed)
 import           Normalize                       (normalizeSyntax)
 import           TruthTable                      (truthTable)
+import           PropDNF                         (toDNF)
 
 -- Web stack
 import           Web.Scotty
@@ -251,4 +252,51 @@ main = do
             , "error"  .= ("Expected JSON object with key \"sentenceText\"" :: String)
             ]                    
 
+      -- DNF page
+    get "/prop/dnf" $ file "static/prop-dnf.html"
 
+    --   DNF conversion endpoint
+    post "/prop/dnf" $ do
+      raw <- body
+      case A.eitherDecode' raw of
+        Left e -> do
+          status status400
+          json $ object
+            [ "status" .= ("bad_json" :: String)
+            , "error"  .= e
+            ]
+        Right (Object v) ->
+          case AT.parseEither (\obj -> obj A..: "sentenceText") v of
+            Left perr -> do
+              status status400
+              json $ object
+                [ "status" .= ("parse_error" :: String)
+                , "error"  .= perr
+                ]
+            Right sTxt ->
+              let sNorm = normalizeSyntax sTxt in
+                case parseFormula sNorm of
+                  Left perr -> do
+                    status status400
+                    json $ object
+                      [ "status" .= ("parse_error" :: String)
+                      , "error"  .= perr
+                      ]
+                  Right phi ->
+                    case toDNF phi of       
+                      Left err -> do
+                        status status400
+                        json $ object
+                          [ "status" .= ("dnf_error" :: String)
+                          , "error"  .= err
+                          ]
+                      Right dnf ->
+                        json $ object
+                          [ "status" .= ("ok" :: String)
+                          , "dnf"    .= renderFormula dnf ]
+        _ -> do
+          status status400
+          json $ object
+            [ "status" .= ("bad_request" :: String)
+            , "error"  .= ("Expected {sentenceText: ...}" :: String)
+            ]
