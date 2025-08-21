@@ -65,8 +65,65 @@
   </main>
 
   <footer>
-    &copy; 2025 Symbolic Logic Tools
-  </footer>
+  &copy; 2025 Symbolic Logic Tools |
+  <!-- These hrefs are just fallbacks; JS will overwrite them -->
+  <a id="bugLink" href="https://github.com/hhalvors/lemmon-checker/issues/new?labels=bug">Report a Bug</a> |
+  <a id="feedbackLink" href="https://github.com/hhalvors/lemmon-checker/discussions">Feedback / Questions</a>
+</footer>
+
+<script>
+  (function () {
+    const REPO_OWNER = 'hhalvors';
+    const REPO_NAME  = 'lemmon-checker';
+
+    const enc  = encodeURIComponent;
+    const page = document.title || 'Unknown page';
+    const url  = window.location.href;
+    const ua   = navigator.userAgent;
+
+    // --- Prefilled BUG link (Issues) ---
+    const bugTitle = `Bug: ${page}`;
+    const bugBody =
+`**Page:** ${page}
+**URL:** ${url}
+
+**Steps to reproduce**
+1. …
+2. …
+
+**Expected**
+…
+
+**Actual**
+…
+
+**Console errors** (open DevTools → Console)
+\`\`\`
+<copy/paste any errors here>
+\`\`\`
+
+**Browser/OS:** ${ua}
+`;
+    const bugUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/issues/new` +
+                   `?labels=bug&title=${enc(bugTitle)}&body=${enc(bugBody)}`;
+    const bugA = document.getElementById('bugLink');
+    if (bugA) bugA.href = bugUrl;
+
+    // --- Prefilled FEEDBACK/QUESTION link (Discussions) ---
+    const qTitle = `Question/Feedback: ${page}`;
+    const qBody =
+`**Page:** ${page}
+**URL:** ${url}
+
+**Your question/feedback**
+- 
+`;
+    const discussUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/discussions/new` +
+                       `?category=general&title=${enc(qTitle)}&body=${enc(qBody)}`;
+    const qA = document.getElementById('feedbackLink');
+    if (qA) qA.href = discussUrl;
+  })();
+</script>
 
   <script>
     // ---------- helpers ----------
