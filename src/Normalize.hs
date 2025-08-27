@@ -77,8 +77,8 @@ replQuantCI pat q = go
 replAxEx :: String -> String
 replAxEx [] = []
 replAxEx (a:x:rest)
-  | (a == 'A' || a == 'a') && isVarChar x = '∀' : x : replAxEx rest
-  | (a == 'E' || a == 'e') && isVarChar x = '∃' : x : replAxEx rest
+  | (a == 'A') && isVarChar x = '∀' : x : replAxEx rest
+  | (a == 'E') && isVarChar x = '∃' : x : replAxEx rest
 replAxEx (c:cs) = c : replAxEx cs
 
 isVarChar :: Char -> Bool

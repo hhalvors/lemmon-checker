@@ -12,15 +12,22 @@ import           ModelSemantics                  (Model, evalClosed)
 import           Normalize                       (normalizeSyntax)
 import           TruthTable                      (truthTable)
 import           PropDNF                         (toDNF)
+import OcrLatexToPipe (latexTableToPipe)
+import qualified OcrLatexToPipe as OCR
+import qualified Data.Text as TS
+
 
 -- Web stack
 import           Web.Scotty
 import           Network.Wai                     (Request(..), RequestBodyLength(..))
 import           Network.Wai.Middleware.Static   (staticPolicy, addBase)
 import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
-import           Network.HTTP.Types.Status       (status200, status400, status401, status413)
+import Network.HTTP.Types.Status (status200, status400, status401, status413, status500)
+import           Network.HTTP.Simple         -- from http-conduit
 
 -- Utils & JSON
+import Control.Monad.IO.Class (liftIO)
+import Control.Applicative ((<|>))
 import           System.Environment              (lookupEnv)
 import           Text.Read                       (readMaybe)
 import           Data.Aeson                      (Value(..), object, (.=))
@@ -31,6 +38,12 @@ import qualified Data.Map.Strict                as M
 import qualified Data.Text.Lazy                 as TL
 import qualified Data.Text.Lazy.Encoding        as TLE
 import qualified Data.ByteString.Lazy           as BL
+import qualified Data.ByteString.Char8       as BS
+import qualified Data.Text        as T
+import qualified Data.HashMap.Strict      as HM
+import qualified Data.Vector              as V
+import qualified Data.Aeson.KeyMap as KM
+import qualified Data.ByteString.Lazy.Char8 as L8
 
 --------------------------------------------------------------------------------
 -- Limits (tweak to taste)
@@ -67,6 +80,16 @@ reportToJSON reps =
     [ "valid" .= LC.proofValid reps
     , "lines" .= map lineReportToJSON reps
     ]
+
+collectTexts :: A.Value -> [T.Text]
+collectTexts (A.Object o) =
+  let direct = case KM.lookup "text" o of
+                 Just (A.String s) -> [s]
+                 _                 -> []
+  in direct ++ concatMap collectTexts (KM.elems o)
+collectTexts (A.Array arr)  = concatMap collectTexts (V.toList arr)
+collectTexts (A.String s)   = [s]
+collectTexts _              = []
 
 --------------------------------------------------------------------------------
 -- Model checker request type (JSON)
@@ -302,3 +325,76 @@ main = do
             [ "status" .= ("bad_request" :: String)
             , "error"  .= ("Expected {sentenceText: ...}" :: String)
             ]
+
+    -- OCR page
+    get "/ocr" $ file "static/ocr.html"
+
+    post "/ocr" $ do
+      raw <- body
+      case A.eitherDecode' raw of
+        Left e -> do
+          status status400
+          json $ object [ "status" .= ("bad_json" :: String), "error" .= e ]
+        Right (A.Object o) ->
+          case AT.parseEither (AT..: "dataUrl") o of
+            Left perr -> do
+              status status400
+              json $ object [ "status" .= ("bad_json" :: String), "error" .= perr ]
+            Right dataUrl -> do
+              -- read Mathpix credentials from env
+              mAppId  <- liftAndCatchIO $ lookupEnv "MATHPIX_APP_ID"
+              mAppKey <- liftAndCatchIO $ lookupEnv "MATHPIX_APP_KEY"
+              case (mAppId, mAppKey) of
+                (Just appId, Just appKey) -> do
+                  let payload = A.object
+                        [ "src"         .= (dataUrl :: String)
+                        , "formats"     .= (["text"] :: [String])
+                        , "rm_spaces"   .= True
+                        , "enable_tables" .= True
+                        , "data_options" .= A.object
+                          [ "include_asciimath" .= False
+                          , "include_latex"     .= False
+                          ]
+                        ]
+                  initReq <- liftAndCatchIO $ parseRequest "POST https://api.mathpix.com/v3/text"
+                  let req = setRequestBodyLBS (A.encode payload)
+                          $ setRequestHeader "Content-Type" ["application/json"]
+                          $ setRequestHeader "app_id"  [BS.pack appId]
+                          $ setRequestHeader "app_key" [BS.pack appKey]
+                          $ initReq
+                  resp <- liftAndCatchIO $ httpLBS req
+                  let bodyL = getResponseBody resp
+                  liftIO $ L8.putStrLn bodyL
+                  case A.eitherDecode' bodyL :: Either String A.Value of
+                    Left decErr -> do
+                      status status500
+                      json $ object [ "status" .= ("mathpix_decode_error" :: String), "error" .= decErr ]
+                    Right (A.Object r) -> do
+                      let rawTxt =
+                            (AT.parseMaybe (AT..: "markdown") r)
+                            <|> (AT.parseMaybe (AT..: "text") r)
+
+                      case rawTxt of
+                        Just t -> do
+                          let converted =
+                                case OCR.latexTableToPipe t of
+                                  Right pipe -> pipe   -- pipe :: String
+                                  Left  _    -> t      -- fall back to original
+                          json $ object [ "status" .= ("ok" :: String)
+                                        , "text"   .= converted
+                                        ]
+                        Nothing -> do
+                          status status500
+                          json $ object [ "status" .= ("mathpix_no_text" :: String)
+                                        , "error"  .= ("No usable text returned" :: String)
+                                        ]                        
+                    Right _ -> do
+                      status status500
+                      json $ object [ "status" .= ("mathpix_bad_response" :: String), "error" .= ("Unexpected JSON shape" :: String) ]
+                _ -> do
+                  status status500
+                  json $ object [ "status" .= ("server_not_configured" :: String)
+                                , "error"  .= ("Set MATHPIX_APP_ID and MATHPIX_APP_KEY" :: String) ]
+        _ -> do
+          status status400
+          json $ object [ "status" .= ("bad_json" :: String), "error" .= ("Expected object with dataUrl" :: String) ]

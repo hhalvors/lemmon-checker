@@ -29,7 +29,7 @@ checkInstanceSubstitution x phiX phiA =
       in if a `Set.member` constsInPhiX
            then Left $
                 "Substitution invalid: constant \"" ++ a
-                ++ "\" still appears in φ(x), violating the freshness requirement."
+                ++ "\" still appears in φ(x). All instances must be replaced."
            else Right a
 
     -- Matched, but the witness term is not a constant
@@ -45,6 +45,18 @@ checkInstanceSubstitution x phiX phiA =
         ++ "φ(x): " ++ show phiX ++ "\nφ(a): " ++ show phiA
 
 
+mpExpected :: ProofLine -> ProofLine -> Either String (PredFormula, Set.Set Int)
+mpExpected l1 l2 =
+  case formula l1 of
+    Implies p q ->
+      if formula l2 /= p
+        then Left "The second cited line of MP must be the antecedent of the conditional."
+        else Right (q, Set.union (references l1) (references l2))
+    _ ->
+      Left "The first cited line of MP must be a conditional."
+
+
+
 checkLine :: Proof -> ProofLine -> Either String ()
 checkLine proof line =
   case justification line of
@@ -57,17 +69,18 @@ checkLine proof line =
     MP m n ->
       case (findLine m, findLine n) of
         (Just l1, Just l2) ->
-          let (a, b) = (formula l1, formula l2)
-              goal = formula line
-              implCheck (Implies x y, other) | x == other && y == goal = True
-              implCheck (other, Implies x y) | x == other && y == goal = True
-              implCheck _ = False
-              valid = implCheck (a, b)
-              expectedRefs = Set.union (references l1) (references l2)
-          in if valid && references line == expectedRefs
-               then Right ()
-               else Left $ "❌ Invalid MP at line " ++ show (lineNumber line)
-        _ -> Left $ "❌ MP requires valid line references."
+          case mpExpected l1 l2 of
+            Left msg ->
+              Left $ "❌ " ++ msg ++ " (at line " ++ show (lineNumber line) ++ ")"
+            Right (q, deps) ->
+              if formula line /= q
+                then Left $ "❌ The formula on the inferred line must be the consequent of the conditional "
+                         ++ "(expected " ++ show q ++ ")."
+              else if references line /= deps
+                then Left $ "❌ The dependencies of MP must be the union of the cited lines' dependencies."
+              else Right ()
+        _ ->
+          Left "❌ MP requires valid line references."
 
     MT m n ->
       case (findLine m, findLine n) of
@@ -363,29 +376,51 @@ checkLine proof line =
   where
     findLine k = lookup k [(lineNumber l, l) | l <- proof]
 
--- Attempts to find the term t such that goal == substitute x t body
+-- Ensures a single consistent t is used everywhere x appears.
 matchSubstitution :: String -> PredFormula -> PredFormula -> Maybe Term
-matchSubstitution x (Predicate name1 args1) (Predicate name2 args2)
-  | name1 == name2 && length args1 == length args2 =
-      foldr unify Nothing (zip args1 args2)
+matchSubstitution x = go
   where
-    unify (Var v, t2) acc
-      | v == x = case acc of
-                   Nothing -> Just t2
-                   Just t' -> if t' == t2 then Just t2 else Nothing
-    unify (_, _) acc = acc
-matchSubstitution x (Not f1) (Not f2) = matchSubstitution x f1 f2
-matchSubstitution x (And f1 f2) (And g1 g2) =
-  matchSubstitution x f1 g1 `orElse` matchSubstitution x f2 g2
-matchSubstitution x (Or f1 f2) (Or g1 g2) =
-  matchSubstitution x f1 g1 `orElse` matchSubstitution x f2 g2
-matchSubstitution x (Implies f1 f2) (Implies g1 g2) =
-  matchSubstitution x f1 g1 `orElse` matchSubstitution x f2 g2
-matchSubstitution x (ForAll y f1) (ForAll z f2)
-  | y == z = matchSubstitution x f1 f2
-matchSubstitution x (Exists y f1) (Exists z f2)
-  | y == z = matchSubstitution x f1 f2
-matchSubstitution _ _ _ = Nothing
+    -- merge two candidate bindings for x, requiring consistency
+    combine :: Maybe Term -> Maybe Term -> Maybe Term
+    combine Nothing  b         = b
+    combine a        Nothing   = a
+    combine (Just t) (Just t') = if t == t' then Just t else Nothing
+
+    go :: PredFormula -> PredFormula -> Maybe Term
+    go (Predicate n1 as1) (Predicate n2 as2)
+      | n1 == n2 && length as1 == length as2 =
+          -- fold over argument pairs, merging any bindings for x
+          foldl combine Nothing (zipWith unifyTerm as1 as2)
+      | otherwise = Nothing
+
+    go (Not a) (Not b) = go a b
+
+    go (And a b) (And c d) =
+      combine (go a c) (go b d)
+
+    go (Or a b) (Or c d) =
+      combine (go a c) (go b d)
+
+    go (Implies a b) (Implies c d) =
+      combine (go a c) (go b d)
+
+    -- only proceed if quantifier symbols and bound vars match
+    go (ForAll y a) (ForAll z b)
+      | y == z = go a b
+      | otherwise = Nothing
+
+    go (Exists y a) (Exists z b)
+      | y == z = go a b
+      | otherwise = Nothing
+
+    go _ _ = Nothing
+
+    -- If the pattern term is exactly the variable x, propose a binding.
+    -- Otherwise, produce no binding (we don't enforce structural equality
+    -- of non-x terms here, to preserve your existing semantics).
+    unifyTerm :: Term -> Term -> Maybe Term
+    unifyTerm (Var v) t2 | v == x = Just t2
+    unifyTerm _        _          = Nothing    
 
 orElse :: Maybe a -> Maybe a -> Maybe a
 orElse (Just x) _ = Just x

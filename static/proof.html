@@ -199,7 +199,17 @@
                        `?category=general&title=${enc(qTitle)}&body=${enc(qBody)}`;
     const qA = document.getElementById('feedbackLink');
     if (qA) qA.href = discussUrl;
-  })();
+})();
+
+document.addEventListener('DOMContentLoaded', () => {
+  const draft = localStorage.getItem('proofDraft');
+  if (draft) {
+    const box = document.getElementById('proofText');
+    if (box && !box.value.trim()) box.value = draft;
+    localStorage.removeItem('proofDraft');
+  }
+});
+
 </script>
 
 </body>

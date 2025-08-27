@@ -14,6 +14,7 @@ library
       Normalize
       TruthTable
       PropDNF
+      OcrLatexToPipe
   hs-source-dirs:      src
   build-depends:
       base >=4.7 && <5
@@ -81,6 +82,10 @@ executable web
     , bytestring
     , containers
     , http-types
+    , http-conduit
+    , http-client-tls
+    , unordered-containers
+    , vector
   default-language:    Haskell2010
 
 executable model-test
