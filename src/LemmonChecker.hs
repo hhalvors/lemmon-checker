@@ -376,51 +376,25 @@ checkLine proof line =
   where
     findLine k = lookup k [(lineNumber l, l) | l <- proof]
 
--- Ensures a single consistent t is used everywhere x appears.
+-- Finite search for a matching term t --------------------------------
+-- We consider candidate terms drawn from variables/constants that appear
+-- in either formula (you can widen/narrow this set as you like).
 matchSubstitution :: String -> PredFormula -> PredFormula -> Maybe Term
-matchSubstitution x = go
-  where
-    -- merge two candidate bindings for x, requiring consistency
-    combine :: Maybe Term -> Maybe Term -> Maybe Term
-    combine Nothing  b         = b
-    combine a        Nothing   = a
-    combine (Just t) (Just t') = if t == t' then Just t else Nothing
+matchSubstitution x phi psi =
+  let candVars   = Set.toList (varsInFormula phi `Set.union` varsInFormula psi)
+      candConsts = Set.toList (constsInFormula phi `Set.union` constsInFormula psi)
+      candidates = map Var candVars ++ map Const candConsts
+  in
+    findFirst (\t -> freeFor x t phi && substFree x t phi == psi) candidates
 
-    go :: PredFormula -> PredFormula -> Maybe Term
-    go (Predicate n1 as1) (Predicate n2 as2)
-      | n1 == n2 && length as1 == length as2 =
-          -- fold over argument pairs, merging any bindings for x
-          foldl combine Nothing (zipWith unifyTerm as1 as2)
-      | otherwise = Nothing
+-- tiny helper
+findFirst :: (a -> Bool) -> [a] -> Maybe a
+findFirst _ [] = Nothing
+findFirst p (z:zs)
+  | p z       = Just z
+  | otherwise = findFirst p zs    
 
-    go (Not a) (Not b) = go a b
 
-    go (And a b) (And c d) =
-      combine (go a c) (go b d)
-
-    go (Or a b) (Or c d) =
-      combine (go a c) (go b d)
-
-    go (Implies a b) (Implies c d) =
-      combine (go a c) (go b d)
-
-    -- only proceed if quantifier symbols and bound vars match
-    go (ForAll y a) (ForAll z b)
-      | y == z = go a b
-      | otherwise = Nothing
-
-    go (Exists y a) (Exists z b)
-      | y == z = go a b
-      | otherwise = Nothing
-
-    go _ _ = Nothing
-
-    -- If the pattern term is exactly the variable x, propose a binding.
-    -- Otherwise, produce no binding (we don't enforce structural equality
-    -- of non-x terms here, to preserve your existing semantics).
-    unifyTerm :: Term -> Term -> Maybe Term
-    unifyTerm (Var v) t2 | v == x = Just t2
-    unifyTerm _        _          = Nothing    
 
 orElse :: Maybe a -> Maybe a -> Maybe a
 orElse (Just x) _ = Just x
