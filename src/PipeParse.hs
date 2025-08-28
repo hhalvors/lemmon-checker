@@ -13,6 +13,9 @@ import qualified Data.Set                   as S
 import           Data.Char                   (isDigit, isSpace, toUpper)
 import           Data.List.Split             (splitOneOf, splitOn)
 
+import Normalize (normalizeFormula)
+import Data.Bifunctor (first)
+
 --------------------------------------------------------------------------------
 -- Small helpers
 --------------------------------------------------------------------------------
@@ -59,9 +62,16 @@ normalizeRule raw =
        "DN"          -> "DN"
        "CP"          -> "CP"
        "ANDI"        -> "∧I"
+       "&I"          -> "∧I"
        "ANDE"        -> "∧E"
+       "&E"          -> "∧E"
+       "vI"          -> "∨I"
        "ORI"         -> "∨I"
+       "vE"          -> "∨E"
        "ORE"         -> "∨E"
+       "RAA"         -> "RAA"
+       "¬I"          -> "RAA"
+       "~I"          -> "RAA"
 
        -- Quantifier rules
        "FORALLE"     -> "∀E"
@@ -103,6 +113,12 @@ parseJustification phi raw0 =
            "∃I" -> case ns of [m]   -> Right (ExistsIntro m); _ -> Left "∃I needs one ref"
            "∃E" -> case ns of [m,a,n] -> Right (ExistsElim m a n)
                               _         -> Left "∃E needs three refs (m,a,n)"
+           "RAA" -> case ns of [a,c] -> Right (RAA a c)
+                               _     -> Left "RAA needs two refs (assumption, contradiction)"
+           "¬I"  -> case ns of [a,c] -> Right (RAA a c)
+                               _     -> Left "¬I needs two refs (assumption, contradiction)"
+           "~I"  -> case ns of [a,c] -> Right (RAA a c)
+                               _     -> Left "~I needs two refs (assumption, contradiction)"                   
            "∀I" -> case ns of
                      [m] -> case phi of
                               ForAll x _ -> Right (ForallIntro m)
@@ -120,18 +136,25 @@ parseJustification phi raw0 =
 
        _ -> Left $ "Bad justification format (need \"<nums> <RULE>\" or \"<m> ∀I x\"): " ++ raw
 
--- One pipe line → ProofLine
 parsePipeLine :: String -> Either String ProofLine
 parsePipeLine rawLine = do
   let cols = splitPipes rawLine
   case cols of
     [depsC, lineC, formulaC, justC] -> do
       ln <- maybe (Left $ "Bad line number: " ++ show lineC) Right (readInt lineC)
-      φ  <- either (Left . ("Formula parse error: "++)) Right (parseFormula formulaC)
-      j  <- parseJustification φ justC
+
+      -- ✅ normalize only the formula text
+      let formTxt = normalizeFormula (trim formulaC)
+      φ  <- first ("Formula parse error: " ++) (parseFormula formTxt)
+
+      -- ❌ do NOT normalize the rule token; parseJustification handles rule aliases
+      j  <- parseJustification φ (trim justC)
+
       let refs = parseRefs depsC
       pure $ ProofLine ln φ j refs
-    _ -> Left $ "Expected 4 columns separated by '|', got: " ++ show cols
+
+    _ -> Left $ "Expected 4 columns separated by '|', got: " ++ show cols       
+
 
 -- Whole text (with optional leading "PROOF" header) → Proof
 parsePipe :: String -> Either String Proof

@@ -173,7 +173,7 @@ main = do
                            " lines; limit is " ++ show maxProofLines :: String)
             ]
         else
-          case parsePipeProof (normalizeSyntax inputTxt) of
+          case parsePipeProof inputTxt of
             Left perr -> do
               status status400
               json $ object
