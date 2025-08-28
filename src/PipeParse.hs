@@ -105,7 +105,7 @@ parseJustification phi raw0 =
                               _         -> Left "∃E needs three refs (m,a,n)"
            "∀I" -> case ns of
                      [m] -> case phi of
-                              ForAll x _ -> Right (ForallIntro m x)  -- infer x from goal
+                              ForAll x _ -> Right (ForallIntro m)
                               _          -> Left "∀I: target line must be ∀x φ to infer x"
                      _   -> Left "∀I needs exactly one ref"
            other -> Left $ "Unknown rule: " ++ other
@@ -114,7 +114,7 @@ parseJustification phi raw0 =
        [numsTxt, ruleTxt, varTxt] -> do
          ns <- readInts numsTxt
          case normalizeRule ruleTxt of
-           "∀I" -> case ns of [m] -> Right (ForallIntro m varTxt)
+           "∀I" -> case ns of [m] -> Right (ForallIntro m)
                               _    -> Left "∀I needs exactly one ref (m) and a variable x"
            other -> Left $ "Unexpected trailing token for rule " ++ other
 

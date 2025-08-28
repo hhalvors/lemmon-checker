@@ -14,35 +14,49 @@ import Debug.Trace (trace)
 import           Control.Monad   (forM_)
 import           Text.Printf      (printf)
 import PrettyPrint (renderFormula)
-import Data.List   (intercalate, replicate)
+import Data.List   (intercalate, replicate, find)
 
-checkInstanceSubstitution
-  :: String                -- ^ x: the bound variable
-  -> PredFormula           -- ^ φ(x): the quantified body
-  -> PredFormula           -- ^ φ(a): the instance
-  -> Either String String  -- ^ Either an error or the constant “a”
-checkInstanceSubstitution x phiX phiA =
-  case matchSubstitution x phiX phiA of
-    -- Matched with a constant witness ‘a’
-    Just (Const a) ->
-      let constsInPhiX = getConsts phiX
-      in if a `Set.member` constsInPhiX
-           then Left $
-                "Substitution invalid: constant \"" ++ a
-                ++ "\" still appears in φ(x). All instances must be replaced."
-           else Right a
+-- Returns Just "" when x not free and goal == body (no constant needed).
+inferWitnessConst
+  :: String        -- x (the bound variable of ∀x)
+  -> PredFormula   -- body (of ∀x body)
+  -> PredFormula   -- phi (the alleged instance)
+  -> Maybe String  -- inferred constant symbol ("" = “no constant needed” case)
+inferWitnessConst x body phi
+  | not (x `Set.member` freeVars body) =
+      if phi == body then Just "" else Nothing
+  | otherwise =
+      find
+        (\c -> substFree x (Const c) body == phi)
+        (Set.toList (getConsts phi))
 
-    -- Matched, but the witness term is not a constant
-    Just other ->
-      Left $
-        "Substitution invalid: instance uses a non-constant term "
-        ++ show other ++ " (not allowed for UI or EE)."
+-- | Strict check: given constant c, ensure φ == substFree x (Const c) body
+checkUIWithConst
+  :: String        -- ^ variable x
+  -> String        -- ^ constant c
+  -> PredFormula   -- ^ body of ∀x body
+  -> PredFormula   -- ^ premise φ
+  -> Either String ()
+checkUIWithConst x c body phi =
+  let expected = substFree x (Const c) body
+  in if phi == expected
+        then Right ()
+        else Left $
+          "UI error: expected instance " ++ show expected
+          ++ " but got " ++ show phi
 
-    -- No match at all
-    Nothing ->
-      Left $
-        "Substitution failed: could not match φ(a) as an instance of φ(x).\n"
-        ++ "φ(x): " ++ show phiX ++ "\nφ(a): " ++ show phiA
+-- | Liberal UI check: if constant not explicitly given, infer it.
+checkUILiberal
+  :: String        -- ^ x
+  -> PredFormula   -- ^ body of ∀x body
+  -> PredFormula   -- ^ premise φ
+  -> Either String String  -- ^ the constant actually used
+checkUILiberal x body phi =
+  case inferWitnessConst x body phi of
+    Just c  -> case checkUIWithConst x c body phi of
+                 Right () -> Right c
+                 Left err -> Left err
+    Nothing -> Left "UI error: could not infer which constant was generalized"          
 
 
 mpExpected :: ProofLine -> ProofLine -> Either String (PredFormula, Set.Set Int)
@@ -240,69 +254,80 @@ checkLine proof line =
 
     ForallElim m ->
       case findLine m of
+        Nothing ->
+          Left "❌ ∀ Elim refers to missing line"
+
         Just l1 ->
           case formula l1 of
             ForAll x body ->
-              let goal = formula line
-              in case matchSubstitution x body goal of
-                   Just _ ->
-                     if references line == references l1
-                       then Right ()
-                       else Left $ "❌ Incorrect references in ∀ Elim"
-                   Nothing -> Left $ "❌ ∀ Elim substitution failed"
-            _ -> Left $ "❌ ∀ Elim expects ∀ formula"
-        Nothing -> Left $ "❌ ∀ Elim refers to missing line"
-
-    ExistsIntro m ->
-      case findLine m of
-        Just l1 ->
-          case formula line of
-            Exists x body ->
-              case matchSubstitution x body (formula l1) of
+              let goal = formula line in
+              case inferWitnessConst x body goal of
+                Nothing ->
+                  Left "❌ ∀ Elim: goal is not a constant-instance of the ∀-body."
                 Just _ ->
                   if references line == references l1
                     then Right ()
-                    else Left $ "❌ Incorrect references in ∃ Intro"
-                Nothing -> Left $ "❌ ∃ Intro substitution failed"
-            _ -> Left $ "❌ Goal is not ∃ formula"
-        Nothing -> Left $ "❌ ∃ Intro refers to missing line"
+                    else Left "❌ ∀ Elim: dependencies must match the ∀ line."
 
-    ForallIntro m x ->
+            _ ->
+              Left "❌ ∀ Elim expects a universally quantified formula (∀x φ)."
+
+              
+
+    ExistsIntro m ->
+      case findLine m of
+        Nothing ->
+          Left "❌ ∃ Intro refers to missing line"
+
+        Just l1 ->
+          case formula line of
+            Exists x body ->
+              let premise = formula l1 in
+              -- Does there exist a constant a with premise == substFree x (Const a) body?
+              case inferWitnessConst x body premise of
+                Nothing ->
+                  Left "❌ ∃ Intro: the cited line is not an instance of the goal’s body (no constant a with φ[a/x] = premise)."
+                Just _a ->
+                  if references line == references l1
+                     then Right ()
+                     else Left "❌ ∃ Intro: dependencies must match the cited line."
+            _ ->
+              Left "❌ ∃ Intro expects an existentially quantified formula (∃x φ)."
+
+    ForallIntro m ->
       case findLine m of
         Just l1 ->
           case formula line of
-            -- goal must be ∀x φ
-            ForAll y body | y == x ->
-              case checkInstanceSubstitution x body (formula l1) of
-                -- substitution inside the quantified body failed
-                Left err ->
-                  Left $ "❌ ∀ Intro: " ++ err
-                         ++ " (line " ++ show (lineNumber line) ++ ")"
+            ForAll x body ->
+              case inferWitnessConst x body (formula l1) of
+                Nothing ->
+                  Left $ "❌ ∀ Intro: could not recognize the instance at line "
+                      ++ show m ++ " as φ(" ++ x ++ "←c)."
 
-                -- substitution succeeded with witness constant a
-                Right a ->
+                Just a ->
                   let occursInGamma = a `Set.member` freeConstsInAssumptions proof (references l1)
-                      expectedRefs = references l1
-                      actualRefs   = references line
-                  in if occursInGamma
-                     then Left $ "❌ ∀ Intro: constant \"" ++ a
-                          ++ "\" appears in undischarged assumptions "
-                          ++ show (references l1)
+                      expectedRefs  = references l1
+                      actualRefs    = references line
+                      -- NEW: forbid any leftover occurrences of a in φ(x)
+                      aInBody       = a `Set.member` (getConsts body)
+                  in if aInBody
+                       then Left $ "❌ ∀ Intro: constant \"" ++ a
+                             ++ "\" still appears in φ(x). All occurrences must be generalized."
+                     else if occursInGamma
+                       then Left $ "❌ ∀ Intro: constant \"" ++ a
+                             ++ "\" appears in undischarged assumptions "
+                             ++ show (references l1)
                      else if actualRefs /= expectedRefs
-                          then Left $ "❌ ∀ Intro: dependencies must match the instance line. "
-                               ++ "Expected " ++ show (Set.toList expectedRefs)
-                               ++ ", got "     ++ show (Set.toList actualRefs)
-                          else Right ()
-
-            -- goal line is not a universal quantification in x
-            _ -> Left $ "❌ ∀ Intro: goal at line "
-                        ++ show (lineNumber line)
-                        ++ " is not ∀" ++ x ++ " φ"
-
-        -- the cited instance line is missing
+                       then Left $ "❌ ∀ Intro: dependencies must match the instance line. "
+                             ++ "Expected " ++ show (Set.toList expectedRefs)
+                             ++ ", got "     ++ show (Set.toList actualRefs)
+                     else Right ()
+            _ ->
+              Left $ "❌ ∀ Intro: goal at line "
+                   ++ show (lineNumber line) ++ " is not a universal sentence."
         Nothing ->
-          Left $ "❌ ∀ Intro refers to missing line " ++ show m    
-
+          Left $ "❌ ∀ Intro refers to missing line " ++ show m
+    
     CP from to ->
       case (findLine from, findLine to) of
         (Just lFrom, Just lTo) ->
@@ -319,57 +344,65 @@ checkLine proof line =
                else Left $ "❌ Invalid CP at line " ++ show (lineNumber line)
         _ -> Left $ "❌ CP refers to missing lines"
 
+
     ExistsElim m m1 n ->
       case (findLine m, findLine m1, findLine n) of
         (Just lExists, Just lAssume, Just lResult) ->
           case formula lExists of
             Exists x body ->
-              let phiA = formula lAssume
-                  psi = formula lResult
-                  goal = formula line
-                  refExists = references lExists
-                  refResult = references lResult
-                  deltaRefs = Set.delete (lineNumber lAssume) refResult
+              let phiA        = formula lAssume          -- supposed instance: φ(a)
+                  psi         = formula lResult          -- result proved under the assumption
+                  goal        = formula line             -- current line must repeat ψ
+                  isAssumption = justification lAssume == Assumption
+
+                  -- references: discharge the assumption m1 from lResult’s refs,
+                  -- and carry over the ∃-line’s refs
+                  refExists   = references lExists
+                  refResult   = references lResult
+                  deltaRefs   = Set.delete (lineNumber lAssume) refResult
                   expectedRefs = Set.union refExists deltaRefs
 
-                  isAssumption = justification lAssume == Assumption
-                  sameGoal = formula line == psi
+                  -- try to infer a constant a with phiA == substFree x (Const a) body
+                  aMaybe      = inferWitnessConst x body phiA
+              in
+                if not isAssumption then
+                  Left $ "❌ ∃ Elim: line " ++ show m1 ++ " must be an Assumption."
+                else case aMaybe of
+                  Nothing ->
+                    Left $ "❌ ∃ Elim: the assumed instance at line " ++ show m1
+                        ++ " is not of the form φ[a/x] for the ∃-body."
+                  Just a ->
+                    -- freshness side-condition for a:
+                    --  (i) not in the ∃-body,
+                    -- (ii) not in the final conclusion ψ,
+                    --(iii) not in any undischarged assumptions (deltaRefs)
+                    let inExistsBody   = a `Set.member` getConsts body
+                        inGoalResult   = a `Set.member` getConsts psi
+                        inOtherRefs    = a `Set.member` getConstsFromRefs proof deltaRefs
 
-                  constMaybe = matchSubstitution x body phiA
-              in case constMaybe of
-                   Just t@(Const a) ->
-                     let inExistsLine = a `Set.member` getConsts body
-                         inGoal = a `Set.member` getConsts psi
-                         inOtherRefs = a `Set.member` getConstsFromRefs proof deltaRefs
+                        whereBad =
+                          [ ("the ∃-formula’s body", inExistsBody)
+                          , ("the conclusion ψ",      inGoalResult)
+                          , ("undischarged assumptions " ++ show (Set.toList deltaRefs), inOtherRefs)
+                          ]
+                        badPlaces = [ place | (place, True) <- whereBad ]
+                    in if not (null badPlaces) then
+                         Left $ "❌ ∃ Elim: the witness constant \"" ++ a ++ "\" must be fresh, "
+                             ++ "but it occurs in " ++ unwords (map (\p -> "[" ++ p ++ "]") badPlaces) ++ "."
+                       else if goal /= psi then
+                         Left $ "❌ ∃ Elim: the conclusion at line " ++ show (lineNumber line)
+                             ++ " must repeat ψ from line " ++ show n ++ "."
+                       else if references line /= expectedRefs then
+                         Left $ "❌ ∃ Elim: incorrect references.\n"
+                             ++ "  Expected: " ++ show (Set.toList expectedRefs) ++ "\n"
+                             ++ "  Found:    " ++ show (Set.toList (references line))
+                       else
+                         Right ()
+            _ ->
+              Left $ "❌ ∃ Elim: line " ++ show m ++ " must contain an existential formula (∃x φ)."
+        _ ->
+          Left "❌ ∃ Elim refers to missing lines."    
 
-                         violations = concat
-                           [ ["line " ++ show (lineNumber lExists) ++ " (∃-formula) | " | inExistsLine]
-                           , ["line " ++ show (lineNumber lResult) ++ " (goal) | " | inGoal]
-                           , ["undischarged assumptions in lines " ++ show (Set.toList deltaRefs) ++ " | " | inOtherRefs]
-                           ]
-
-                     in if not isAssumption
-                          then Left $ "❌ ∃ Elim: line " ++ show m1 ++ " must be an assumption"
-                          else if not sameGoal
-                            then Left $ "❌ ∃ Elim: conclusion at line " ++ show (lineNumber line) ++ " does not match ψ from line " ++ show n
-                            else if not (null violations)
-                              then Left $ "❌ ∃ Elim: constant " ++ a ++ " must be fresh — but it appears in: " ++ concat violations
-                              else if references line /= expectedRefs
-                                then Left $ "❌ ∃ Elim: incorrect references at line " ++ show (lineNumber line) ++
-                                            "\nExpected: " ++ show (Set.toList expectedRefs) ++
-                                            "\nFound: " ++ show (Set.toList (references line))
-                                else Right ()
-
-                   _ ->
-                     let constsInBody = getConsts body
-                         constsInPhiA = getConsts phiA
-                         overlap = Set.toList (Set.intersection constsInBody constsInPhiA)
-                     in Left $
-                          "❌ ∃ Elim: substitution failed at line " ++ show (lineNumber line) ++
-                          ". The constant(s) used in φ(a) also occur in the ∃ formula φ(x): " ++
-                          show overlap ++ "\n→ This violates the restriction that the witness must be fresh."
-            _ -> Left $ "❌ ∃ Elim: line " ++ show m ++ " must contain ∃ formula"
-        _ -> Left $ "❌ ∃ Elim refers to missing lines"        
 
     _ -> Right ()
 

@@ -110,22 +110,6 @@ fromTuples :: [[Entity]] -> Set [Entity]
 fromTuples = S.fromList
 
 -- ──────────────────────────────────────────────────────────────────────────────
--- Free variables (for evalClosed diagnostics)
--- ──────────────────────────────────────────────────────────────────────────────
-
-freeVars :: PredFormula -> Set String
-freeVars = go S.empty
-  where
-    go bound (Predicate _ ts) = S.fromList [ x | Var x <- ts, x `S.notMember` bound ]
-    go _     (Boolean _)      = S.empty
-    go b     (Not φ)          = go b φ
-    go b     (And φ ψ)        = go b φ `S.union` go b ψ
-    go b     (Or  φ ψ)        = go b φ `S.union` go b ψ
-    go b     (Implies φ ψ)    = go b φ `S.union` go b ψ
-    go b     (ForAll x φ)     = go (S.insert x b) φ
-    go b     (Exists x φ)     = go (S.insert x b) φ
-
--- ──────────────────────────────────────────────────────────────────────────────
 -- Term evaluation
 -- ──────────────────────────────────────────────────────────────────────────────
 

@@ -9,6 +9,7 @@ module ProofTypes
   , Proof(..)
   , substFree
   , freeFor
+  , freeVars
   , varsInFormula
   , constsInFormula
   ) where
@@ -57,7 +58,7 @@ data Justification
   | RAA Int Int  -- refers to assumption line and contradiction line
   | ForallElim Int 
   | ExistsIntro Int
-  | ForallIntro Int String  -- introducing ∀x from line Int
+  | ForallIntro Int -- introducing ∀x from line Int
   | ExistsElim Int Int Int  -- m = ∃xφ(x), m1 = assumption φ(a), n = result ψ
   deriving (Show, Eq, Generic)
 
@@ -150,4 +151,18 @@ substFree x t = go
       | y == x             = Exists y p
       | otherwise          = Exists y (go p)
 
+-- Collect free variables in a term
+freeVarsTerm :: Term -> Set String
+freeVarsTerm (Var v)   = S.singleton v
+freeVarsTerm (Const _) = S.empty
+
+-- Collect free variables in a formula
+freeVars :: PredFormula -> Set String
+freeVars (Predicate _ args) = S.unions (map freeVarsTerm args)
+freeVars (Not f)            = freeVars f
+freeVars (And f g)          = freeVars f `S.union` freeVars g
+freeVars (Or f g)           = freeVars f `S.union` freeVars g
+freeVars (Implies f g)      = freeVars f `S.union` freeVars g
+freeVars (ForAll x f)       = S.delete x (freeVars f)
+freeVars (Exists x f)       = S.delete x (freeVars f)
 
