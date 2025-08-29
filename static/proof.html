@@ -51,8 +51,8 @@
       <table id="lineTable" style="display:none">
         <thead>
           <tr>
-            <th>Line</th>
             <th>Deps</th>
+            <th>Line</th>
             <th>Formula</th>
             <th>Justification</th>
             <th>OK</th>
@@ -84,9 +84,9 @@
     tbody.innerHTML = '';
     for (const l of lines){
       const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="mono">${l.line}</td>
+	tr.innerHTML = `
         <td class="mono">${(l.deps && l.deps.length) ? l.deps.join(',') : '∅'}</td>
+        <td class="mono">(${l.line})</td>
         <td class="mono">${l.formulaPretty}</td>
         <td class="mono">${l.justification}</td>
         <td>${l.ok ? '<span class="ok">OK</span>' : '<span class="bad">X</span>'}</td>
