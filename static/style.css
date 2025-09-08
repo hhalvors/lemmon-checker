@@ -106,3 +106,11 @@ nav a:hover {
 .button.secondary:hover {
   background-color: #ddd;
 }
+
+.hidden { display: none; }
+#export-latex .actions { display:flex; gap:.5rem; margin-top:.5rem; }
+#latex-output {
+  width: 100%;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  white-space: pre;
+}

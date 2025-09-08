@@ -64,6 +64,16 @@
 
       <div id="errorBox"></div>
     </section>
+
+    <section id="exportLatex" class="card hidden">
+  <h3>LaTeX (copy or download)</h3>
+  <textarea id="latexOutput" readonly rows="12" spellcheck="false"></textarea>
+  <div class="actions">
+    <button id="copyLatex" type="button">Copy</button>
+    <button id="downloadLatex" type="button">Download .tex</button>
+  </div>
+  <p class="muted small">This appears only when the proof checks as valid.</p>
+</section>
   </main>
 
 <script>
@@ -73,6 +83,12 @@
   const table     = $('lineTable');
   const tbody     = table.querySelector('tbody');
   const errorBox  = $('errorBox');
+
+  // NEW: LaTeX export elements
+  const exportBox   = $('exportLatex');
+  const latexOutput = $('latexOutput');
+  const copyBtn     = $('copyLatex');
+  const dlBtn       = $('downloadLatex');
 
   function setBusy(b){
     const btn = $('checkBtn');
@@ -102,7 +118,10 @@
     errorBox.textContent = '';
     overall.innerHTML = '';
     renderRows([]);
-    setBusy(true);
+      setBusy(true);
+
+    // NEW: hide LaTeX box before each check
+    if (exportBox) { exportBox.style.display = 'none'; latexOutput.value = ''; }
 
     const proof = proofText.value;
 
@@ -120,9 +139,16 @@
         return;
       }
 
-      const r = data.report;
+      const r = data.report || {};
       overall.innerHTML = `Overall: <strong class="${r.valid ? 'ok' : 'bad'}">${r.valid ? 'VALID' : 'INVALID'}</strong>`;
       renderRows(r.lines || []);
+
+      // NEW: show LaTeX export only if valid AND latex provided
+      const latex = data.latex ?? r.latex;   // support either top-level or inside report
+      if (r.valid && typeof latex === 'string' && latex.trim().length){
+        latexOutput.value = latex;
+        exportBox.style.display = '';
+      }
     } catch (err) {
       overall.innerHTML = `<span class="bad">Network error: ${String(err)}</span>`;
     } finally {
@@ -138,8 +164,28 @@
       doCheck(e);
     }
   });
-</script>  
 
+  // NEW: copy/download handlers
+  copyBtn?.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(latexOutput.value);
+      copyBtn.textContent = 'Copied!';
+      setTimeout(() => copyBtn.textContent = 'Copy', 900);
+    } catch {}
+  });
+
+  dlBtn?.addEventListener('click', () => {
+    const blob = new Blob([latexOutput.value], { type: 'application/x-tex' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = 'proof.tex';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+</script>  
 
 <footer>
   &copy; 2025 Symbolic Logic Tools |

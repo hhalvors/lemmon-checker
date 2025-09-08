@@ -3,6 +3,7 @@
 module Main where
 
 -- App modules
+import ProofToLaTeX (proofTableLaTeX, defaultRenderOpts)
 import qualified LemmonChecker                   as LC
 import           ProofTypes
 import           PipeParse                       (parsePipeProof)
@@ -181,10 +182,15 @@ main = do
                 , "error"  .= perr
                 ]
             Right proof -> do
-              let reps = LC.checkProof proof
+              let reps  = LC.checkProof proof
+                  ok    = LC.proofValid reps
+                  
+                  latex = if ok then Just (proofTableLaTeX defaultRenderOpts proof) else (Nothing :: Maybe String)
               json $ object
                 [ "status" .= ("ok" :: String)
                 , "report" .= reportToJSON reps
+                , "valid"  .= ok
+                , "latex"  .= latex   -- present only when valid
                 ]
 
 

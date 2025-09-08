@@ -9,8 +9,12 @@
     .container{max-width:1000px;margin:2rem auto;padding:1.25rem;background:#fff;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.06)}
     h2{margin-top:1.25rem}
     .tips{background:#f6f7fb;border:1px solid #e5e7f2;border-radius:10px;padding:1rem}
-    .grid{display:grid;gap:1rem}
-    @media (min-width: 880px){ .grid{grid-template-columns: 1fr 1fr}}
+    .grid {
+  display: flex;
+  flex-direction: column;  /* stack children vertically */
+  gap: 1rem;
+}
+     @media (min-width: 880px){ .grid{grid-template-columns: 1fr 1fr}}
     code,kbd,pre{font-family: ui-monospace, Menlo, Consolas, monospace}
     kbd{border:1px solid #ccd1e1;border-bottom-width:2px;border-radius:6px;padding:.1rem .35rem;background:#fff}
     .mono{font-family: ui-monospace, Menlo, Consolas, monospace}
@@ -40,8 +44,10 @@
   <main>
     <div class="container">
       <p class="muted small">
-        These tools share the same syntax normalizer. You can type Unicode symbols (¬ ∧ ∨ → ∀ ∃)
-        or use the ASCII shortcuts below. Variables can be any letters or alphanumerics (e.g. <code>x</code>, <code>y</code>, <code>z</code>, <code>x1</code>).
+        These tools share the same syntax normalizer. You can type
+        Unicode symbols (¬ ∧ ∨ → ∀ ∃) or use the ASCII shortcuts
+        below. Variables can be any letters or alphanumerics
+        (e.g. <code>x,y,z,x1</code>).
       </p>
 
       <section id="shortcuts">
