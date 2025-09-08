@@ -81,3 +81,28 @@ nav a {
 nav a:hover {
   text-decoration: underline;
 }
+
+/* Group buttons in a row with spacing */
+.button-group {
+  display: flex;
+  flex-wrap: wrap;       /* wrap to next line if too many buttons */
+  gap: 1rem;             /* space between buttons */
+  margin-bottom: 2rem;   /* space below each section */
+}
+
+/* Buttons will have equal sizing if you like */
+.button-group .button {
+  flex: 1 1 auto;        /* grow and shrink as needed */
+  min-width: 180px;      /* prevents buttons from getting too narrow */
+  text-align: center;
+}
+
+/* Optional: secondary buttons (like the Instructions link in header) */
+.button.secondary {
+  background-color: #eee;
+  color: #333;
+  border: 1px solid #ccc;
+}
+.button.secondary:hover {
+  background-color: #ddd;
+}
