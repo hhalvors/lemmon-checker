@@ -65,7 +65,7 @@
       <div id="errorBox"></div>
     </section>
 
-    <section id="exportLatex" class="card hidden">
+  <section id="exportLatex" class="card hidden">
   <h3>LaTeX (copy or download)</h3>
   <textarea id="latexOutput" readonly rows="12" spellcheck="false"></textarea>
   <div class="actions">
@@ -73,7 +73,8 @@
     <button id="downloadLatex" type="button">Download .tex</button>
   </div>
   <p class="muted small">This appears only when the proof checks as valid.</p>
-</section>
+</section>  
+
   </main>
 
 <script>
@@ -84,11 +85,23 @@
   const tbody     = table.querySelector('tbody');
   const errorBox  = $('errorBox');
 
-  // NEW: LaTeX export elements
+  // LaTeX export elements
   const exportBox   = $('exportLatex');
   const latexOutput = $('latexOutput');
   const copyBtn     = $('copyLatex');
   const dlBtn       = $('downloadLatex');
+
+  // helpers to show/hide the LaTeX box
+  function hideLatexBox() {
+    if (!exportBox) return;
+    latexOutput.value = '';
+    exportBox.classList.add('hidden');
+  }
+  function showLatexBox(tex) {
+    if (!exportBox) return;
+    latexOutput.value = tex;
+    exportBox.classList.remove('hidden');
+  }
 
   function setBusy(b){
     const btn = $('checkBtn');
@@ -100,7 +113,7 @@
     tbody.innerHTML = '';
     for (const l of lines){
       const tr = document.createElement('tr');
-	tr.innerHTML = `
+      tr.innerHTML = `
         <td class="mono">${(l.deps && l.deps.length) ? l.deps.join(',') : '∅'}</td>
         <td class="mono">(${l.line})</td>
         <td class="mono">${l.formulaPretty}</td>
@@ -118,10 +131,9 @@
     errorBox.textContent = '';
     overall.innerHTML = '';
     renderRows([]);
-      setBusy(true);
+    setBusy(true);
 
-    // NEW: hide LaTeX box before each check
-    if (exportBox) { exportBox.style.display = 'none'; latexOutput.value = ''; }
+    hideLatexBox(); // always hide before a new check
 
     const proof = proofText.value;
 
@@ -143,11 +155,12 @@
       overall.innerHTML = `Overall: <strong class="${r.valid ? 'ok' : 'bad'}">${r.valid ? 'VALID' : 'INVALID'}</strong>`;
       renderRows(r.lines || []);
 
-      // NEW: show LaTeX export only if valid AND latex provided
-      const latex = data.latex ?? r.latex;   // support either top-level or inside report
-      if (r.valid && typeof latex === 'string' && latex.trim().length){
-        latexOutput.value = latex;
-        exportBox.style.display = '';
+      // show LaTeX only if valid AND a non-empty LaTeX string is present
+      const latex = (typeof data.latex === 'string' ? data.latex : (typeof r.latex === 'string' ? r.latex : ''));
+      if (r.valid && latex.trim().length){
+        showLatexBox(latex);
+      } else {
+        hideLatexBox();
       }
     } catch (err) {
       overall.innerHTML = `<span class="bad">Network error: ${String(err)}</span>`;
@@ -165,7 +178,7 @@
     }
   });
 
-  // NEW: copy/download handlers
+  // copy/download handlers
   copyBtn?.addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(latexOutput.value);
@@ -185,7 +198,11 @@
     a.remove();
     URL.revokeObjectURL(url);
   });
+
+  hideLatexBox();
 </script>  
+
+
 
 <footer>
   &copy; 2025 Symbolic Logic Tools |

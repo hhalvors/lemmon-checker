@@ -108,8 +108,14 @@ nav a:hover {
 }
 
 .hidden { display: none; }
-#export-latex .actions { display:flex; gap:.5rem; margin-top:.5rem; }
-#latex-output {
+
+#exportLatex .actions {
+  display: flex;
+  gap: .5rem;
+  margin-top: .5rem;
+}
+
+#latexOutput {
   width: 100%;
   font-family: ui-monospace, Menlo, Consolas, monospace;
   white-space: pre;
