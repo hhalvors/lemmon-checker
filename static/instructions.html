@@ -45,7 +45,7 @@
     <div class="container">
       <p class="muted small">
         These tools share the same syntax normalizer. You can type
-        Unicode symbols (¬ ∧ ∨ → ∀ ∃) or use the ASCII shortcuts
+        Unicode symbols (¬,∧,∨,→,∀,∃) or use the ASCII shortcuts
         below. Variables can be any letters or alphanumerics
         (e.g. <code>x,y,z,x1</code>).
       </p>
@@ -78,18 +78,40 @@
       <div class="grid">
         <section id="proof">
           <h2>Proof Checker</h2>
-          <p>Paste a proof in <span class="pill">pipe format</span> (one step per line)</p>
+          <p>This checker works for proofs in the style
+          of <a href="https://press.princeton.edu/books/paperback/9780691211954/how-logic-works"><i>How
+          Logic Works</i></a>. Paste a proof in pipe format, one step
+          per line. Each line should have four columns separated by
+          the pipe symbol "|": dependencies, line number, formula,
+          justification. For example:</p>
 <pre><code>1 | 1 | P | A
 2 | 1 | Q | A
 3 | 1 | P &amp; Q | 1,2 &amp;I
-</code></pre>
-          <div class="tips small">
-            <ul>
-              <li>Rules can use short labels like <code>EE</code>, <code>EI</code>, <code>UI</code>, <code>UE</code> (or long forms).</li>
-              <li>Errors appear per-line with messages; an overall VALID/INVALID badge is shown.</li>
-              <li>Dependencies go in the middle column (e.g. <code>1,2</code>).</li>
-            </ul>
-          </div>
+</code></pre> The columns do not need to be aligned.
+
+<section id="rules">
+  <h3>Permissible rules</h3>
+  <ul class="small">
+    <li><strong>A</strong> — Assumption</li>
+    <li><strong>MP</strong> — Modus Ponens</li>
+    <li><strong>MT</strong> — Modus Tollens</li>
+    <li><strong>DN</strong> — Double Negation</li>
+    <li><strong>CP</strong> — Conditional Proof</li>
+    <li><strong>∧I / &amp;I</strong> — And-Introduction</li>
+    <li><strong>∧E / &amp;E</strong> — And-Elimination</li>
+    <li><strong>∨I / vI</strong> — Or-Introduction</li>
+    <li><strong>∨E / vE</strong> — Or-Elimination</li>
+    <li><strong>∀E / UI</strong> — Universal Elimination</li>
+    <li><strong>∀I / UE</strong> — Universal Introduction</li>
+    <li><strong>∃I / EI</strong> — Existential Introduction</li>
+    <li><strong>∃E / EE</strong> — Existential Elimination</li>
+    <li><strong>RAA</strong> — Reductio ad Absurdum</li>
+  </ul>
+  <p class="small muted">
+    Both short (UI, EI, etc.) and symbolic forms (&amp;I, vE, ∀I, ∃E) are accepted.
+  </p>
+</section>
+	  
           <p><a href="/proof">Open the Proof Checker →</a></p>
         </section>
 
@@ -99,7 +121,8 @@
           <div class="tips small">
             <ul>
               <li><strong>Domain</strong>: comma-separated elements (e.g. <code>a,b,c</code>).</li>
-              <li><strong>Constants</strong>: map to elements (e.g. <code>c = a</code>).</li>
+              <li><strong>Constants</strong>: map to elements
+              (e.g. <code>c = a</code>).</li>
               <li><strong>Symbols</strong>: add rows with a name, an arity (0–3), and an extension:
                 <ul>
                   <li>Arity 0: <code>T</code> or <code>F</code> (propositional constant).</li>
@@ -107,7 +130,8 @@
                   <li>Arity 2–3: tuples in angle brackets (e.g. <code>&lt;a,b&gt;</code>, <code>&lt;a,b,c&gt;</code>).</li>
                 </ul>
               </li>
-              <li>Uninterpreted symbols produce a clear error (no “guessing”).</li>
+              <li>Uninterpreted symbols produce a clear error (no
+              “guessing”).</li>
             </ul>
           </div>
 <pre><code>Example sentence:
@@ -119,7 +143,10 @@ Ax (Fx -> ∃y Rxy)
 
       <section id="prop">
         <h2>Truth Tables</h2>
-        <p>Enter a purely propositional sentence (only 0-ary symbols like <code>P, Q, R</code>—no predicates with arguments). The tool generates all valuations and the truth value of the sentence.</p>
+        <p>Enter a purely propositional sentence (only 0-ary symbols
+        like <code>P, Q, R</code>—no predicates with arguments). The
+        tool generates all valuations and the truth value of the
+        sentence.</p>
 <pre><code>(P -> Q) v R
 ~(P &amp; Q) -> (Q v R)
 </code></pre>
@@ -136,7 +163,9 @@ Ax (Fx -> ∃y Rxy)
       <section id="faq">
         <h2>FAQ / Tips</h2>
         <ul class="small">
-          <li><strong>Variables:</strong> you can use <code>x, y, z, x1</code>, etc. Quantifiers bind one variable at a time.</li>
+          <li><strong>Variables:</strong> you can
+          use <code>x,y,z,x1</code>, etc. Quantifiers bind one
+          variable at a time.</li>
           <li><strong>Spacing:</strong> spaces around operators are optional. Parentheses work as usual.</li>
           <li><strong>Shorthands:</strong> prefer <code>Ax</code>, <code>Ex</code> for speed; they normalize to <code>∀x</code>, <code>∃x</code>.</li>
           <li><strong>Errors:</strong> messages reference the normalized input (post-shortcut), so your ASCII is translated first.</li>
