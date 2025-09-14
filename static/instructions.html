@@ -70,8 +70,10 @@
           </table>
         </div>
         <p class="small muted">
-          We also accept spaced forms like <code>∀ x (Fx → Gx)</code>. The shorthands <code>Ax</code>, <code>Ex</code> bind a single
-          variable character immediately after the <code>A</code>/<code>E</code>.
+          We also accept spaced forms such as <code>∀ x (Fx →
+          Gx)</code>. The shorthands <code>Ax</code>, <code>Ex</code>
+          bind a single variable character immediately after
+          the <code>A</code>/<code>E</code>.
         </p>
       </section>
 
@@ -81,13 +83,13 @@
           <p>This checker works for proofs in the style
           of <a href="https://press.princeton.edu/books/paperback/9780691211954/how-logic-works"><i>How
           Logic Works</i></a>. Paste a proof in pipe format, one step
-          per line. Each line should have four columns separated by
-          the pipe symbol "|": dependencies, line number, formula,
-          justification. For example:</p>
+          per line. Each line should consist of four columns --
+          dependencies, line number, formula, justification --
+          separated by the pipe symbol "|". For example:</p>
 <pre><code>1 | 1 | P | A
 2 | 2 | Q | A
 1,2 | 3 | P &amp; Q | 1,2 &amp;I
-</code></pre> The columns do not need to be aligned.
+</code></pre> The columns don't need to be aligned.
 
 <section id="rules">
   <h3>Permissible rules</h3>

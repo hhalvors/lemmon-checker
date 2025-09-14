@@ -50,40 +50,63 @@ readInts s =
 
 normalizeRule :: String -> String
 normalizeRule raw =
-  let u = map toUpper raw
-  in case u of
-       -- Assumption
-       "A"           -> "A"
-       "ASSUMPTION"  -> "A"
+  case raw of
+    -- Assumption
+    "A"           -> "A"
+    "Assumption"  -> "A"
 
-       -- Propositional rules
-       "MP"          -> "MP"
-       "MT"          -> "MT"
-       "DN"          -> "DN"
-       "CP"          -> "CP"
-       "ANDI"        -> "∧I"
-       "&I"          -> "∧I"
-       "ANDE"        -> "∧E"
-       "&E"          -> "∧E"
-       "vI"          -> "∨I"
-       "ORI"         -> "∨I"
-       "vE"          -> "∨E"
-       "ORE"         -> "∨E"
-       "RAA"         -> "RAA"
-       "¬I"          -> "RAA"
-       "~I"          -> "RAA"
+    -- Propositional rules
+    "MP"          -> "MP"
+    "MT"          -> "MT"
+    "DN"          -> "DN"
+    "CP"          -> "CP"
 
-       -- Quantifier rules
-       "FORALLE"     -> "∀E"
-       "UE"          -> "∀E"  -- short form
-       "FORALLI"     -> "∀I"
-       "UI"          -> "∀I"  -- short form
-       "EXISTSI"     -> "∃I"
-       "EI"          -> "∃I"  -- short form
-       "EXISTSE"     -> "∃E"
-       "EE"          -> "∃E"  -- short form
+    -- ∧-Intro / Elim
+    "∧I"          -> "∧I"
+    "&I"          -> "∧I"
+    "ANDI"        -> "∧I"
+    "/\\I"        -> "∧I"
 
-       other         -> other
+    "∧E"          -> "∧E"
+    "&E"          -> "∧E"
+    "ANDE"        -> "∧E"
+    "/\\E"        -> "∧E"
+
+    -- ∨-Intro / Elim
+    "∨I"          -> "∨I"
+    "vI"          -> "∨I"
+    "\\/I"        -> "∨I"
+    "ORI"         -> "∨I"
+
+    "∨E"          -> "∨E"
+    "vE"          -> "∨E"
+    "\\/E"        -> "∨E"
+    "ORE"         -> "∨E"
+
+    -- Negation intro as RAA
+    "RAA"         -> "RAA"
+    "¬I"          -> "RAA"
+    "~I"          -> "RAA"
+
+    -- Quantifier rules
+    "∀E"          -> "∀E"
+    "UE"          -> "∀E"
+    "ForallE"     -> "∀E"
+
+    "∀I"          -> "∀I"
+    "UI"          -> "∀I"
+    "ForallI"     -> "∀I"
+
+    "∃I"          -> "∃I"
+    "EI"          -> "∃I"
+    "ExistsI"     -> "∃I"
+
+    "∃E"          -> "∃E"
+    "EE"          -> "∃E"
+    "ExistsE"     -> "∃E"
+
+    other         -> other
+
 
 
 -- NOTE: we inspect the *target* formula to infer the ∀I variable when omitted.
