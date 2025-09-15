@@ -113,12 +113,11 @@ ppJust j =
         AndElim _            -> "∧E"
         OrIntro _            -> "∨I"
         OrElim _ _ _ _ _     -> "∨E"
-        RAA _ _              -> "RAA"
-        ForallElim _         -> "∀E"
-        ForallIntro _        -> "∀I"
-        ExistsIntro _        -> "∃I"
-        ExistsElim _ _ _     -> "∃E"
-        Assumption           -> "A"  -- already handled
+        RAA _ _              -> "RA"
+        ForallElim _         -> "UE"
+        ForallIntro _        -> "UI"
+        ExistsIntro _        -> "UI"
+        ExistsElim _ _ _     -> "UE"
 
       nums :: [Int]
       nums = case j of
