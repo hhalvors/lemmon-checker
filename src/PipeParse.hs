@@ -85,6 +85,7 @@ normalizeRule raw =
 
     -- Negation intro as RAA
     "RAA"         -> "RAA"
+    "RA"          -> "RAA"
     "¬I"          -> "RAA"
     "~I"          -> "RAA"
 
