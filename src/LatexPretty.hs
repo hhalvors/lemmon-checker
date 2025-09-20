@@ -61,17 +61,18 @@ ppF st (Predicate name ts) =
         then headTxt ++ "(" ++ args ++ ")"
         else unwords (headTxt : map (ppT st) ts)
 
-ppF st (Not φ) = "\\lnot " ++ wrapIfComplex (ppF st φ)
+-- Negation: avoid extra parens unless operand is complex
+ppF st (Not f@(Predicate _ _)) = "\\neg " ++ ppF st f
+ppF st (Not f@(Boolean _))     = "\\neg " ++ ppF st f
+ppF st (Not f@(Not _))         = "\\neg " ++ ppF st f
+ppF st (Not f)                 = "\\neg (" ++ ppF st f ++ ")"
 
-ppF st (And φ ψ) =
-  "(" ++ ppF st φ ++ " \\land " ++ ppF st ψ ++ ")"
+-- Fully parenthesize binary connectives
+ppF st (And φ ψ) = "(" ++ ppF st φ ++ " \\wedge " ++ ppF st ψ ++ ")"
+ppF st (Or  φ ψ) = "(" ++ ppF st φ ++ " \\vee "   ++ ppF st ψ ++ ")"
+ppF st (Implies φ ψ) = "(" ++ ppF st φ ++ " \\to " ++ ppF st ψ ++ ")"
 
-ppF st (Or φ ψ) =
-  "(" ++ ppF st φ ++ " \\lor " ++ ppF st ψ ++ ")"
-
-ppF st (Implies φ ψ) =
-  "(" ++ ppF st φ ++ " \\to " ++ ppF st ψ ++ ")"
-
+-- Quantifiers
 ppF st (ForAll x φ) =
   "\\forall " ++ varWrapper st x ++ "\\, " ++ wrapIfComplex (ppF st φ)
 
