@@ -10,9 +10,9 @@ module LatexPretty
 import           Data.List (intercalate)
 import           ProofTypes
 
--- ──────────────────────────────────────────────────────────────
+-- ──────────────────────────────────────────────────────────────────────────────
 -- Style options
--- ──────────────────────────────────────────────────────────────
+-- ──────────────────────────────────────────────────────────────────────────────
 
 data LaTeXStyle = LaTeXStyle
   { showPredParens   :: Bool
@@ -29,9 +29,9 @@ defaultStyle = LaTeXStyle
   , varWrapper     = escape
   }
 
--- ──────────────────────────────────────────────────────────────
+-- ──────────────────────────────────────────────────────────────────────────────
 -- Public interface
--- ──────────────────────────────────────────────────────────────
+-- ──────────────────────────────────────────────────────────────────────────────
 
 ppTermLaTeX :: Term -> String
 ppTermLaTeX = ppT defaultStyle
@@ -40,59 +40,67 @@ ppFormulaLaTeX :: PredFormula -> String
 ppFormulaLaTeX = ppFormulaLaTeX' defaultStyle
 
 ppFormulaLaTeX' :: LaTeXStyle -> PredFormula -> String
-ppFormulaLaTeX' st = goTop
-  where
-    -- binary connective detector
-    isBinary :: PredFormula -> Bool
-    isBinary And{}     = True
-    isBinary Or{}      = True
-    isBinary Implies{} = True
-    isBinary _         = False
+ppFormulaLaTeX' st = ppF st
 
-    -- wrapper: add parens only if φ is binary
-    wrapIfBin :: PredFormula -> String
-    wrapIfBin φ
-      | isBinary φ = "(" ++ goTop φ ++ ")"
-      | otherwise  = goTop φ
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Formula pretty printer
+-- ──────────────────────────────────────────────────────────────────────────────
 
-    wrapIfComplex :: PredFormula -> String
-    wrapIfComplex φ
-      | isBinary φ = "(" ++ goTop φ ++ ")"
-      | Not{}      <- φ = "(" ++ goTop φ ++ ")"
-      | otherwise       = goTop φ
+ppF :: LaTeXStyle -> PredFormula -> String
+ppF st (Boolean True)  = "\\top"
+ppF st (Boolean False) = "\\bot"
 
-    -- top-level printer (never adds outer parens)
-    goTop (Boolean True)   = "\\top"
-    goTop (Boolean False)  = "\\bot"
+ppF st (Predicate name []) = predWrapper st name
+ppF st (Predicate name ts) =
+  let headTxt = predWrapper st name
+      args    = intercalate ", " (map (ppT st) ts)
+  in if showPredParens st
+        then headTxt ++ "(" ++ args ++ ")"
+        else unwords (headTxt : map (ppT st) ts)
 
-    goTop (Predicate name ts)
-      | null ts   = predWrapper st name
-      | otherwise =
-          let args = intercalate ", " (map (ppT st) ts)
-          in if showPredParens st
-                then predWrapper st name ++ "(" ++ args ++ ")"
-                else unwords (predWrapper st name : map (ppT st) ts)
+ppF st (Not φ)
+  | isBinary φ = "\\neg (" ++ ppF st φ ++ ")"
+  | otherwise  = "\\neg "  ++ ppF st φ
 
-    goTop (Not φ)          = "\\neg " ++ goTop φ
+ppF st (And φ ψ)     = wrapIfBin st φ ++ " \\wedge " ++ wrapIfBin st ψ
+ppF st (Or φ ψ)      = wrapIfBin st φ ++ " \\vee "   ++ wrapIfBin st ψ
+ppF st (Implies φ ψ) = wrapIfBin st φ ++ " \\to "    ++ wrapIfBin st ψ
 
-    goTop (And φ ψ)        = wrapIfBin φ ++ " \\wedge " ++ wrapIfBin ψ
-    goTop (Or φ ψ)         = wrapIfBin φ ++ " \\vee "   ++ wrapIfBin ψ
-    goTop (Implies φ ψ)    = wrapIfBin φ ++ " \\to "    ++ wrapIfBin ψ
+ppF st (ForAll x φ) =
+  "\\forall " ++ varWrapper st x ++ " " ++ wrapIfQuant st φ
 
-    goTop (ForAll x φ)     = "\\forall " ++ varWrapper st x ++ " " ++ wrapIfComplex φ
-    goTop (Exists x φ)     = "\\exists " ++ varWrapper st x ++ " " ++ wrapIfComplex φ
+ppF st (Exists x φ) =
+  "\\exists " ++ varWrapper st x ++ " " ++ wrapIfQuant st φ
 
--- ──────────────────────────────────────────────────────────────
--- Term pretty printer
--- ──────────────────────────────────────────────────────────────
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Terms
+-- ──────────────────────────────────────────────────────────────────────────────
 
 ppT :: LaTeXStyle -> Term -> String
 ppT st (Var x)   = varWrapper st x
 ppT st (Const c) = constWrapper st c
 
--- ──────────────────────────────────────────────────────────────
+-- ──────────────────────────────────────────────────────────────────────────────
 -- Helpers
--- ──────────────────────────────────────────────────────────────
+-- ──────────────────────────────────────────────────────────────────────────────
+
+isBinary :: PredFormula -> Bool
+isBinary And{}     = True
+isBinary Or{}      = True
+isBinary Implies{} = True
+isBinary _         = False
+
+wrapIfBin :: LaTeXStyle -> PredFormula -> String
+wrapIfBin st φ
+  | isBinary φ = "(" ++ ppF st φ ++ ")"
+  | otherwise  = ppF st φ
+
+wrapIfQuant :: LaTeXStyle -> PredFormula -> String
+wrapIfQuant st φ
+  | isBinary φ   = "(" ++ ppF st φ ++ ")"
+  | ForAll{} <- φ = "(" ++ ppF st φ ++ ")"
+  | Exists{} <- φ = "(" ++ ppF st φ ++ ")"
+  | otherwise    = ppF st φ
 
 escape :: String -> String
 escape = concatMap go
@@ -108,4 +116,3 @@ escape = concatMap go
     go '~'  = "\\~{}"
     go '\\' = "\\textbackslash{}"
     go c    = [c]
-
