@@ -41,16 +41,8 @@ proofTableLaTeX opts ls =
 
       rows     = map (renderLine opts) (sortOnLine ls)
 
-      -- Make the header row, and ensure it ends with \\ \hline
-      hdrRow   = case header opts of
-                   True  -> headerRow (order opts) ++ " \\\\ \\hline"
-                   False -> ""   -- no header text, but we’ll still draw the top \hline
   in unlines $
-       [ "\\begin{tabular}{" ++ colSpec ++ "}"
-       , "\\hline"
-       , hdrRow
-       ]
-       -- each row just ends with \\ (no \hline between or after)
+       [ "\\begin{tabular}{" ++ colSpec ++ "}" ]
        ++ map (++ " \\\\") rows
        ++ [ "\\end{tabular}" ]  
 
@@ -109,10 +101,10 @@ ppJust j =
         MT _ _               -> "MT"
         DN _                 -> "DN"
         CP _ _               -> "CP"
-        AndIntro _ _         -> "∧I"
-        AndElim _            -> "∧E"
-        OrIntro _            -> "∨I"
-        OrElim _ _ _ _ _     -> "∨E"
+        AndIntro _ _         -> "$\\wedge$I"
+        AndElim _            -> "$\\wedge$E"
+        OrIntro _            -> "$\\vee$I"
+        OrElim _ _ _ _ _     -> "$\\∨ee$E"
         RAA _ _              -> "RA"
         ForallElim _         -> "UE"
         ForallIntro _        -> "UI"
