@@ -1,22 +1,22 @@
--- src/FormulaParser.hs
 {-# LANGUAGE LambdaCase #-}
 
 module FormulaParser
-  ( parseFormula           -- String -> Either String PredFormula
-  , runParser              -- alias
+  ( parseFormula
+  , runParser
   ) where
 
 import           ProofTypes
 import           Text.Parsec.String (Parser)
+import qualified Text.Parsec as P
 import           Text.Parsec
-  ( (<|>), try, eof, parse, spaces, char, string, satisfy
-  , chainl1, chainr1, sepBy1, many1
+  ( try, eof, parse, spaces, char, string, satisfy
+  , chainl1, chainr1, sepBy1, many1, oneOf
   )
 import           Data.Char (isLower, isUpper)
 import qualified Data.Set  as Set
 import           Data.Set  (Set)
 
--- ----- tiny lexer helpers -----
+-- ----- Lexer helpers -----
 lexeme :: Parser a -> Parser a
 lexeme p = p <* spaces
 
@@ -26,11 +26,11 @@ symbol = lexeme . string
 parens :: Parser a -> Parser a
 parens p = lexeme (char '(') *> p <* lexeme (char ')')
 
--- unicode tokens
+-- unicode operators
 opNot, opAnd, opOr, opImp, opFA, opEX :: String
 opNot = "¬"; opAnd = "∧"; opOr = "∨"; opImp = "→"; opFA = "∀"; opEX = "∃"
 
--- identifiers (single letters for now)
+-- identifiers
 lowerIdent :: Parser String
 lowerIdent = lexeme $ (:[]) <$> satisfy isLower
 
@@ -57,27 +57,26 @@ pImp :: Set String -> Parser PredFormula
 pImp env = chainr1 (pAndOr env) (op opImp Implies)
 
 pAndOr :: Set String -> Parser PredFormula
-pAndOr env = chainl1 (pUnary env) ((op opAnd And) <|> (op opOr Or))
+pAndOr env = chainl1 (pUnary env) ( (op opAnd And) P.<|> (op opOr Or) )
 
 pUnary :: Set String -> Parser PredFormula
 pUnary env =
-      pQuant env
-  <|> (Not <$> (symbol opNot *> pUnary env))
-  <|> pAtom env
-  <|> parens (pImp env)
+      try (pQuant env)
+  P.<|> (Not <$> (symbol opNot *> pUnary env))
+  P.<|> pAtom env
+  P.<|> parens (pImp env)
 
--- quantifiers extend the bound‑variable environment -----------------
+-- quantifiers -------------------------------------------------------
 
 pQuant :: Set String -> Parser PredFormula
-pQuant env =
-      do _ <- symbol opFA
-         x <- lowerIdent
-         ForAll x <$> pUnary (Set.insert x env)
-  <|> do _ <- symbol opEX
-         x <- lowerIdent
-         Exists x <$> pUnary (Set.insert x env)
+pQuant env = do
+  q <- oneOf "∀∃AE"
+  x <- satisfy isLower
+  let constructor = if q `elem` "∀A" then ForAll else Exists
+  body <- pUnary (Set.insert [x] env)
+  return (constructor [x] body)
 
--- terms that respect the bound‑variable environment -----------------
+-- terms -------------------------------------------------------------
 
 term :: Set String -> Parser Term
 term env = do
@@ -90,12 +89,21 @@ termListParens env = parens $ term env `sepBy1` lexeme (char ',')
 termListBare :: Set String -> Parser [Term]
 termListBare env = many1 (term env)
 
--- atoms: P, P(x,y), or bare-args Pxy --------------------------------
+-- atoms: P, P(x,y), or bare-args Pxy -------------------------------
 
 pAtom :: Set String -> Parser PredFormula
-pAtom env = do
-  predName <- upperIdent
-  args <-   try (termListParens env)
-        <|> try (termListBare   env)
-        <|> pure []
-  pure (Predicate predName args)
+pAtom env = try withParens P.<|> try bareArgs P.<|> noArgs
+  where
+    withParens = do
+      predName <- upperIdent
+      args <- termListParens env
+      pure (Predicate predName args)
+
+    bareArgs = do
+      predName <- upperIdent
+      args <- many1 (term env)
+      pure (Predicate predName args)
+
+    noArgs = do
+      predName <- upperIdent
+      pure (Predicate predName [])
