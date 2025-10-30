@@ -108,8 +108,8 @@ ppJust j =
         RAA _ _              -> "RA"
         ForallElim _         -> "UE"
         ForallIntro _        -> "UI"
-        ExistsIntro _        -> "UI"
-        ExistsElim _ _ _     -> "UE"
+        ExistsIntro _        -> "EI"
+        ExistsElim _ _ _     -> "EE"
 
       nums :: [Int]
       nums = case j of
