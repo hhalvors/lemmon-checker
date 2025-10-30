@@ -14,24 +14,22 @@ import           ProofTypes
 -- Style options
 -- ──────────────────────────────────────────────────────────────────────────────
 
+data PredArgStyle = Parens | Spaced | Adjacent
+
 data LaTeXStyle = LaTeXStyle
-  { showPredParens   :: Bool
-  , constWrapper     :: String -> String
-  , predWrapper      :: String -> String
-  , varWrapper       :: String -> String
+  { predArgStyle    :: PredArgStyle              -- changed
+  , constWrapper    :: String -> String
+  , predWrapper     :: String -> String
+  , varWrapper      :: String -> String
   }
 
 defaultStyle :: LaTeXStyle
 defaultStyle = LaTeXStyle
-  { showPredParens = True
-  , constWrapper   = escape
-  , predWrapper    = escape
-  , varWrapper     = escape
-  }
-
--- ──────────────────────────────────────────────────────────────────────────────
--- Public interface
--- ──────────────────────────────────────────────────────────────────────────────
+  { predArgStyle  = Adjacent   -- default to classical
+  , constWrapper  = escape
+  , predWrapper   = escape
+  , varWrapper    = escape
+  }  
 
 ppTermLaTeX :: Term -> String
 ppTermLaTeX = ppT defaultStyle
@@ -42,10 +40,6 @@ ppFormulaLaTeX = ppFormulaLaTeX' defaultStyle
 ppFormulaLaTeX' :: LaTeXStyle -> PredFormula -> String
 ppFormulaLaTeX' st = ppF st
 
--- ──────────────────────────────────────────────────────────────────────────────
--- Formula pretty printer
--- ──────────────────────────────────────────────────────────────────────────────
-
 ppF :: LaTeXStyle -> PredFormula -> String
 ppF st (Boolean True)  = "\\top"
 ppF st (Boolean False) = "\\bot"
@@ -53,10 +47,12 @@ ppF st (Boolean False) = "\\bot"
 ppF st (Predicate name []) = predWrapper st name
 ppF st (Predicate name ts) =
   let headTxt = predWrapper st name
-      args    = intercalate ", " (map (ppT st) ts)
-  in if showPredParens st
-        then headTxt ++ "(" ++ args ++ ")"
-        else unwords (headTxt : map (ppT st) ts)
+      argsParens = intercalate ", " (map (ppT st) ts)
+      argsAdj    = concatMap (ppT st) ts
+  in case predArgStyle st of
+       Parens     -> headTxt ++ "(" ++ argsParens ++ ")"
+       Spaced     -> unwords (headTxt : map (ppT st) ts)
+       Adjacent   -> headTxt ++ argsAdj
 
 ppF st (Not φ)
   | isBinary φ = "\\neg (" ++ ppF st φ ++ ")"
@@ -98,8 +94,6 @@ wrapIfBin st φ
 wrapIfQuant :: LaTeXStyle -> PredFormula -> String
 wrapIfQuant st φ
   | isBinary φ   = "(" ++ ppF st φ ++ ")"
-  | ForAll{} <- φ = "(" ++ ppF st φ ++ ")"
-  | Exists{} <- φ = "(" ++ ppF st φ ++ ")"
   | otherwise    = ppF st φ
 
 escape :: String -> String
