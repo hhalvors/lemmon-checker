@@ -23,7 +23,8 @@ renderFormula = go
     isBinary And{}     = True
     isBinary Or{}      = True
     isBinary Implies{} = True
-    isBinary _         = False
+    isBinary (Predicate "=" _)    = True
+    isBinary _                    = False
 
     wrapIfBin :: PredFormula -> String
     wrapIfBin φ
@@ -33,6 +34,10 @@ renderFormula = go
     -- main pretty-printer -------------------------------------------
     go (Boolean True)   = "⊤"
     go (Boolean False)  = "⊥"
+
+    -- special-case equality for infix printing
+    go (Predicate "=" [t1, t2]) =
+      renderTerm t1 ++ " = " ++ renderTerm t2
 
     go (Predicate name ts)
       | null ts         = name

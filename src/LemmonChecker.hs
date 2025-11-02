@@ -401,8 +401,42 @@ checkLine proof line =
             _ ->
               Left $ "❌ ∃ Elim: line " ++ show m ++ " must contain an existential formula (∃x φ)."
         _ ->
-          Left "❌ ∃ Elim refers to missing lines."    
+          Left "❌ ∃ Elim refers to missing lines."
 
+        ------------------------------------------------------
+    -- =I  (Equality Introduction)
+    ------------------------------------------------------
+    EqIntro ->
+      case formula line of
+        Predicate "=" [Const c1, Const c2]
+          | c1 == c2 ->
+              if Set.null (references line)
+                then Right ()
+                else Left $ "❌ =I: equality introduction line must have no dependencies."
+        _ ->
+          Left $ "❌ =I: can only introduce c=c."
+
+    ------------------------------------------------------
+    -- =E  (Equality Elimination)
+    ------------------------------------------------------
+    EqElim m n ->
+      case (findLine m, findLine n) of
+        (Just lPhi, Just lEq) ->
+          case isEq (formula lEq) of
+            Just (Const a, Const b) ->
+              let phi          = formula lPhi
+                  goal         = formula line
+                  ok           = equalUpToConstReplacement a b phi goal
+                  depsExpected = Set.union (references lPhi) (references lEq)
+              in if not ok
+                   then Left $ "❌ =E: The conclusion does not match the cited formula up to " ++ a ++ "=" ++ b ++ "."
+                 else if references line /= depsExpected
+                   then Left $ "❌ =E: dependencies must be the union of the cited lines."
+                   else Right ()
+
+            _ -> Left "❌ =E: second cited line must be an equality between constants a=b."
+
+        _ -> Left "❌ =E: refers to missing line(s)."      
 
     _ -> Right ()
 

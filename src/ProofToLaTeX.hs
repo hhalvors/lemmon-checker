@@ -110,6 +110,8 @@ ppJust j =
         ForallIntro _        -> "UI"
         ExistsIntro _        -> "EI"
         ExistsElim _ _ _     -> "EE"
+        EqIntro              -> "=I"
+        EqElim _ _           -> "=E"
 
       nums :: [Int]
       nums = case j of
@@ -126,6 +128,8 @@ ppJust j =
         ForallIntro m        -> [m]
         ExistsIntro m        -> [m]
         ExistsElim m a n     -> [m,a,n]
+        EqIntro              -> []
+        EqElim m n           -> [m,n]
         Assumption           -> []
 
       numsTxt = intercalate "," (map show nums)

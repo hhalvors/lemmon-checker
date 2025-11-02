@@ -91,8 +91,19 @@ termListBare env = many1 (term env)
 
 -- atoms: P, P(x,y), or bare-args Pxy -------------------------------
 
+pEquality :: Set String -> Parser PredFormula
+pEquality env = try $ do
+  t1 <- term env
+  _  <- symbol "="
+  t2 <- term env
+  return (Predicate "=" [t1, t2])
+
 pAtom :: Set String -> Parser PredFormula
-pAtom env = try withParens P.<|> try bareArgs P.<|> noArgs
+pAtom env =
+      try (pEquality env)
+  P.<|> try withParens
+  P.<|> try bareArgs
+  P.<|> noArgs
   where
     withParens = do
       predName <- upperIdent
@@ -107,3 +118,4 @@ pAtom env = try withParens P.<|> try bareArgs P.<|> noArgs
     noArgs = do
       predName <- upperIdent
       pure (Predicate predName [])
+

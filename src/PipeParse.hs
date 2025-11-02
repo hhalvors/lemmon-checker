@@ -106,6 +106,10 @@ normalizeRule raw =
     "EE"          -> "∃E"
     "ExistsE"     -> "∃E"
 
+    "=E"          -> "=E"
+
+    "=I"          -> "=I"
+
     other         -> other
 
 
@@ -117,6 +121,7 @@ parseJustification phi raw0 =
       ws    = words raw
   in case ws of
        ["A"] -> Right Assumption
+       ["=I"] -> Right EqIntro  
 
        -- "<nums> <RULE>"
        [numsTxt, ruleTxt] -> do
@@ -148,6 +153,15 @@ parseJustification phi raw0 =
                               ForAll x _ -> Right (ForallIntro m)
                               _          -> Left "∀I: target line must be ∀x φ to infer x"
                      _   -> Left "∀I needs exactly one ref"
+
+           "=I" -> case ns of
+                     [] -> Right EqIntro
+                     _  -> Left "=I takes no line numbers"
+
+           "=E" -> case ns of
+                     [m,n] -> Right (EqElim m n)
+                     _     -> Left "=E needs two refs (line with a=b, line with φ(a))"
+
            other -> Left $ "Unknown rule: " ++ other
 
        -- "<m> ∀I x" (explicit variable still accepted)

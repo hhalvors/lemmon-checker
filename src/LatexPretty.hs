@@ -44,6 +44,9 @@ ppF :: LaTeXStyle -> PredFormula -> String
 ppF st (Boolean True)  = "\\top"
 ppF st (Boolean False) = "\\bot"
 
+-- ✅ SPECIAL CASE for equality (infix)
+ppF st (Predicate "=" [t1, t2]) = ppT st t1 ++ " = " ++ ppT st t2
+
 ppF st (Predicate name []) = predWrapper st name
 ppF st (Predicate name ts) =
   let headTxt = predWrapper st name

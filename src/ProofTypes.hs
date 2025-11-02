@@ -12,6 +12,8 @@ module ProofTypes
   , freeVars
   , varsInFormula
   , constsInFormula
+  , isEq
+  , equalUpToConstReplacement
   ) where
 
 import GHC.Generics (Generic)
@@ -60,6 +62,8 @@ data Justification
   | ExistsIntro Int
   | ForallIntro Int -- introducing ∀x from line Int
   | ExistsElim Int Int Int  -- m = ∃xφ(x), m1 = assumption φ(a), n = result ψ
+  | EqIntro
+  | EqElim Int Int
   deriving (Show, Eq, Generic)
 
 instance FromJSON Justification
@@ -165,4 +169,35 @@ freeVars (Or f g)           = freeVars f `S.union` freeVars g
 freeVars (Implies f g)      = freeVars f `S.union` freeVars g
 freeVars (ForAll x f)       = S.delete x (freeVars f)
 freeVars (Exists x f)       = S.delete x (freeVars f)
+
+isEq :: PredFormula -> Maybe (Term, Term)
+isEq (Predicate "=" [t1, t2]) = Just (t1, t2)
+isEq _                        = Nothing
+
+equalUpToConstReplacement :: String -> String -> PredFormula -> PredFormula -> Bool
+equalUpToConstReplacement a b = goF
+  where
+    eqConst x y =
+      (x == a && y == b) || x == y
+
+    goT (Var x)   (Var y)   = x == y
+    goT (Const x) (Const y) = eqConst x y
+    goT _         _         = False
+
+    goTs xs ys =
+      length xs == length ys &&
+      and (zipWith goT xs ys)
+
+    goF (Predicate n1 ts1) (Predicate n2 ts2) = n1 == n2 && goTs ts1 ts2
+    goF (Not p)            (Not q)            = goF p q
+    goF (And p1 p2)        (And q1 q2)        = goF p1 q1 && goF p2 q2
+    goF (Or  p1 p2)        (Or  q1 q2)        = goF p1 q1 && goF p2 q2
+    goF (Implies p q)      (Implies r s)      = goF p r && goF q s
+    goF (ForAll x p)       (ForAll y q)
+      | x == y    = goF p q
+      | otherwise = False
+    goF (Exists x p)       (Exists y q)
+      | x == y    = goF p q
+      | otherwise = False
+    goF _ _ = False
 
