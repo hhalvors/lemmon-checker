@@ -110,6 +110,8 @@ normalizeRule raw =
 
     "=I"          -> "=I"
 
+    "LEM"         -> "LEM"
+
     other         -> other
 
 
@@ -121,7 +123,8 @@ parseJustification phi raw0 =
       ws    = words raw
   in case ws of
        ["A"] -> Right Assumption
-       ["=I"] -> Right EqIntro  
+       ["=I"] -> Right EqIntro
+       ["LEM"] -> Right LEM          
 
        -- "<nums> <RULE>"
        [numsTxt, ruleTxt] -> do

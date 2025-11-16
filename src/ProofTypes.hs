@@ -64,6 +64,7 @@ data Justification
   | ExistsElim Int Int Int  -- m = ∃xφ(x), m1 = assumption φ(a), n = result ψ
   | EqIntro
   | EqElim Int Int
+  | LEM
   deriving (Show, Eq, Generic)
 
 instance FromJSON Justification

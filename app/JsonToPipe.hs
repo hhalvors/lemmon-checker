@@ -28,6 +28,7 @@ ppJust j = case j of
   OrIntro i            -> one "∨I" i
   OrElim a b c d e     -> list "∨E" [a,b,c,d,e]
   RAA i j'             -> two "RAA" i j'
+  LEM            -> "LEM"
   ForallElim i         -> one "∀E" i
   ExistsIntro i        -> one "∃I" i
   ForallIntro i _x     -> one "∀I" i

@@ -112,6 +112,7 @@ ppJust j =
         ExistsElim _ _ _     -> "EE"
         EqIntro              -> "=I"
         EqElim _ _           -> "=E"
+        LEM                  -> "LEM" 
 
       nums :: [Int]
       nums = case j of
@@ -131,6 +132,7 @@ ppJust j =
         EqIntro              -> []
         EqElim m n           -> [m,n]
         Assumption           -> []
+        LEM                  -> []         -- NEW
 
       numsTxt = intercalate "," (map show nums)
   in if null nums then tag else numsTxt ++ " " ++ tag

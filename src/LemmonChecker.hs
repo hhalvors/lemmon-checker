@@ -16,6 +16,13 @@ import           Text.Printf      (printf)
 import PrettyPrint (renderFormula)
 import Data.List   (intercalate, replicate, find)
 
+isLEMFormula :: PredFormula -> Bool
+isLEMFormula f =
+  case f of
+    Or phi (Not psi)   -> phi == psi
+    Or (Not phi) psi   -> phi == psi
+    _                  -> False
+
 -- Returns Just "" when x not free and goal == body (no constant needed).
 inferWitnessConst
   :: String        -- x (the bound variable of ∀x)
@@ -344,6 +351,10 @@ checkLine proof line =
                else Left $ "❌ Invalid CP at line " ++ show (lineNumber line)
         _ -> Left $ "❌ CP refers to missing lines"
 
+    LEM ->
+      if isLEMFormula (formula line)
+        then Right ()
+        else Left $ "❌ Invalid LEM at line " ++ show (lineNumber line)        
 
     ExistsElim m m1 n ->
       case (findLine m, findLine m1, findLine n) of
