@@ -15,6 +15,7 @@ import           Control.Monad   (forM_)
 import           Text.Printf      (printf)
 import PrettyPrint (renderFormula)
 import Data.List   (intercalate, replicate, find)
+import TruthTable (isPropTaut)
 
 isLEMFormula :: PredFormula -> Bool
 isLEMFormula f =
@@ -354,7 +355,27 @@ checkLine proof line =
     LEM ->
       if isLEMFormula (formula line)
         then Right ()
-        else Left $ "❌ Invalid LEM at line " ++ show (lineNumber line)        
+        else Left $ "❌ Invalid LEM at line " ++ show (lineNumber line)
+    
+    PropTaut citedLines ->
+      case mapM findLine citedLines of
+        Nothing ->
+          Left $ "❌ prop taut requires valid line references (at line "
+              ++ show (lineNumber line) ++ ")."
+        Just ls ->
+          let premises     = map formula ls
+              expectedDeps = Set.unions (map references ls)
+          in
+          if not (isPropTaut premises (formula line))
+             then Left $ "❌ The formula on line " ++ show (lineNumber line)
+                      ++ " is not a propositional consequence of the cited lines "
+                      ++ show citedLines ++ "."
+          else if references line /= expectedDeps
+             then Left $ "❌ The dependencies of prop taut (line "
+                      ++ show (lineNumber line)
+                      ++ ") must be the union of the cited lines' dependencies."
+          else
+             Right ()
 
     ExistsElim m m1 n ->
       case (findLine m, findLine m1, findLine n) of

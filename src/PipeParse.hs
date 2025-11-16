@@ -112,19 +112,26 @@ normalizeRule raw =
 
     "LEM"         -> "LEM"
 
+    "prop taut"   -> "prop taut"
+
     other         -> other
 
-
-
--- NOTE: we inspect the *target* formula to infer the ∀I variable when omitted.
 parseJustification :: PredFormula -> String -> Either String Justification
 parseJustification phi raw0 =
   let raw   = trim raw0
       ws    = words raw
   in case ws of
-       ["A"] -> Right Assumption
-       ["=I"] -> Right EqIntro
-       ["LEM"] -> Right LEM          
+       ["A"]   -> Right Assumption
+       ["=I"]  -> Right EqIntro
+       ["LEM"] -> Right LEM
+
+       -- NEW: propositional tautology rule
+       ["prop","taut"] ->
+         Right (PropTaut [])
+
+       [numsTxt, "prop", "taut"] -> do
+         ns <- readInts numsTxt
+         Right (PropTaut ns)
 
        -- "<nums> <RULE>"
        [numsTxt, ruleTxt] -> do
@@ -176,6 +183,7 @@ parseJustification phi raw0 =
            other -> Left $ "Unexpected trailing token for rule " ++ other
 
        _ -> Left $ "Bad justification format (need \"<nums> <RULE>\" or \"<m> ∀I x\"): " ++ raw
+
 
 parsePipeLine :: String -> Either String ProofLine
 parsePipeLine rawLine = do

@@ -41,7 +41,7 @@ data PredFormula
   | Implies PredFormula PredFormula
   | ForAll String PredFormula
   | Exists String PredFormula
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Ord, Generic)
 
 instance FromJSON PredFormula
 instance ToJSON PredFormula
@@ -65,6 +65,7 @@ data Justification
   | EqIntro
   | EqElim Int Int
   | LEM
+  | PropTaut [Int]  
   deriving (Show, Eq, Generic)
 
 instance FromJSON Justification

@@ -62,8 +62,8 @@
               <tr><td>and</td><td class="mono">φ ∧ ψ</td><td class="mono">φ /\ ψ, φ & ψ, φ and ψ</td></tr>
               <tr><td>or</td><td class="mono">φ ∨ ψ</td><td class="mono">φ \/ ψ, φ v ψ, φ or ψ</td></tr>
               <tr><td>implies</td><td class="mono">φ → ψ</td><td class="mono">φ -> ψ, φ => ψ</td></tr>
-              <tr><td>forall</td><td class="mono">∀x φ</td><td class="mono">forall x φ, <strong>Axφ</strong></td></tr>
-              <tr><td>exists</td><td class="mono">∃x φ</td><td class="mono">exists x φ, <strong>Exφ</strong></td></tr>
+              <tr><td>forall</td><td class="mono">∀x φ</td><td class="mono">forall x φ, Axφ</td></tr>
+              <tr><td>exists</td><td class="mono">∃x φ</td><td class="mono">exists x φ, Exφ</td></tr>
               <tr><td>predicates</td><td class="mono">Rxy, F x</td><td class="mono">application by juxtaposition or parentheses</td></tr>
               <tr><td>propositional constants</td><td class="mono">P, Q, R</td><td class="mono">treated as 0-ary predicates</td></tr>
             </tbody>
@@ -83,8 +83,8 @@
           <p>This checker works for proofs in the style
           of <a href="https://press.princeton.edu/books/paperback/9780691211954/how-logic-works"><i>How
           Logic Works</i></a>. Paste a proof in pipe format, one step
-          per line. Each line should consist of four columns --
-          dependencies, line number, formula, justification --
+          per line. Each line should consist of four columns &ndash;
+          dependencies, line number, formula, justification &ndash;
           separated by the pipe symbol "|". For example:</p>
 <pre><code>1 | 1 | P | A
 2 | 2 | Q | A
@@ -101,17 +101,21 @@
     <li><strong>CP</strong> — Conditional Proof</li>
     <li><strong>∧I / &amp;I</strong> — And-Introduction</li>
     <li><strong>∧E / &amp;E</strong> — And-Elimination</li>
-    <li><strong>∨I / vI</strong> — Or-Introduction</li>
-    <li><strong>∨E / vE</strong> — Or-Elimination</li>
+    <li><strong>vI</strong> — Or-Introduction</li>
+    <li><strong>vE</strong> — Or-Elimination</li>
     <li><strong>∀E / UI</strong> — Universal Elimination</li>
     <li><strong>∀I / UE</strong> — Universal Introduction</li>
     <li><strong>∃I / EI</strong> — Existential Introduction</li>
     <li><strong>∃E / EE</strong> — Existential Elimination</li>
     <li><strong>RAA</strong> — Reductio ad Absurdum</li>
+    <li><strong>prop taut</strong> - Propositional Tautology</li>
   </ul>
-  <p class="small muted">
-    Both short (UI, EI, etc.) and symbolic forms (&amp;I, vE, ∀I, ∃E) are accepted.
-  </p>
+  <p>The last rule validates any formula that is a Boolean consequence
+  of <var>n</var> other lines. For example:
+<pre><code>1   | 1 | AxFx v EyGy  | A
+2   | 2 | ~AxFx        | A
+1,2 | 3 | EyGy         | 1,2 prop taut
+</code></pre></p>
 </section>
 	  
           <p><a href="/proof">Open the Proof Checker →</a></p>

@@ -91,7 +91,6 @@ ppRefs s =
     []  -> "$\\varnothing$"           -- nice touch for empty set
     xs  -> intercalate "," (map show xs)
 
--- numbers-first, short-tag justification
 ppJust :: Justification -> String
 ppJust Assumption = "A"
 ppJust j =
@@ -112,7 +111,8 @@ ppJust j =
         ExistsElim _ _ _     -> "EE"
         EqIntro              -> "=I"
         EqElim _ _           -> "=E"
-        LEM                  -> "LEM" 
+        LEM                  -> "LEM"
+        PropTaut _           -> "prop taut"   -- NEW
 
       nums :: [Int]
       nums = case j of
@@ -132,11 +132,12 @@ ppJust j =
         EqIntro              -> []
         EqElim m n           -> [m,n]
         Assumption           -> []
-        LEM                  -> []         -- NEW
+        LEM                  -> []
+        PropTaut is          -> is           -- NEW
 
       numsTxt = intercalate "," (map show nums)
   in if null nums then tag else numsTxt ++ " " ++ tag
-
+    
 
 -- Sort by line number just in case the caller gives us unsorted lines
 sortOnLine :: [ProofLine] -> [ProofLine]
