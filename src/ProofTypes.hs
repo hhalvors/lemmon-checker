@@ -65,7 +65,8 @@ data Justification
   | EqIntro
   | EqElim Int Int
   | LEM
-  | PropTaut [Int]  
+  | PropTaut [Int]
+  | QN Int   
   deriving (Show, Eq, Generic)
 
 instance FromJSON Justification

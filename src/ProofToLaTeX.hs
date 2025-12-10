@@ -113,6 +113,7 @@ ppJust j =
         EqElim _ _           -> "=E"
         LEM                  -> "LEM"
         PropTaut _           -> "prop taut"   -- NEW
+        QN _                 -> "QN"          -- NEW
 
       nums :: [Int]
       nums = case j of
@@ -134,6 +135,7 @@ ppJust j =
         Assumption           -> []
         LEM                  -> []
         PropTaut is          -> is           -- NEW
+        QN m                 -> [m]          -- NEW
 
       numsTxt = intercalate "," (map show nums)
   in if null nums then tag else numsTxt ++ " " ++ tag

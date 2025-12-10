@@ -65,6 +65,7 @@ normalizeRule raw =
        "ORE"         -> "∨E"
        "FORALLE"     -> "∀E"
        "UE"          -> "∀E"
+       "QN"          -> "QN"
        "FORALLI"     -> "∀I"
        "UI"          -> "∀I"
        "EXISTSI"     -> "∃I"
@@ -90,6 +91,11 @@ parseJustification phi raw0 =
            "MT" -> case ns of [m,n] -> Right (MT m n); _ -> Left "MT needs two refs"
            "DN" -> case ns of [m]   -> Right (DN m);     _ -> Left "DN needs one ref"
            "CP" -> case ns of [m,n] -> Right (CP m n);   _ -> Left "CP needs two refs"
+                      -- NEW: QN (quantifier negation), one cited line
+           "QN" ->
+             case ns of
+               [m] -> Right (QN m)
+               _   -> Left "QN needs one ref"
            "∧I" -> case ns of [m,n] -> Right (AndIntro m n); _ -> Left "∧I needs two refs"
            "∧E" -> case ns of [m]   -> Right (AndElim m);    _ -> Left "∧E needs one ref"
            "∨I" -> case ns of [m]   -> Right (OrIntro m);    _ -> Left "∨I needs one ref"

@@ -142,6 +142,11 @@ parseJustification phi raw0 =
            "MP" -> case ns of [m,n] -> Right (MP m n); _ -> Left "MP needs two refs"
            "MT" -> case ns of [m,n] -> Right (MT m n); _ -> Left "MT needs two refs"
            "DN" -> case ns of [m]   -> Right (DN m);     _ -> Left "DN needs one ref"
+                      -- NEW: QN (quantifier negation), one cited line
+           "QN" ->
+             case ns of
+               [m] -> Right (QN m)
+               _   -> Left "QN needs one ref"
            "CP" -> case ns of [m,n] -> Right (CP m n);   _ -> Left "CP needs two refs"
            "∧I" -> case ns of [m,n] -> Right (AndIntro m n); _ -> Left "∧I needs two refs"
            "∧E" -> case ns of [m]   -> Right (AndElim m);    _ -> Left "∧E needs one ref"
@@ -157,7 +162,7 @@ parseJustification phi raw0 =
            "¬I"  -> case ns of [a,c] -> Right (RAA a c)
                                _     -> Left "¬I needs two refs (assumption, contradiction)"
            "~I"  -> case ns of [a,c] -> Right (RAA a c)
-                               _     -> Left "~I needs two refs (assumption, contradiction)"                   
+                               _     -> Left "~I needs two refs (assumption, contradiction)"
            "∀I" -> case ns of
                      [m] -> case phi of
                               ForAll x _ -> Right (ForallIntro m)

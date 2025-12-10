@@ -66,7 +66,6 @@ checkUILiberal x body phi =
                  Left err -> Left err
     Nothing -> Left "UI error: could not infer which constant was generalized"          
 
-
 mpExpected :: ProofLine -> ProofLine -> Either String (PredFormula, Set.Set Int)
 mpExpected l1 l2 =
   case formula l1 of
@@ -77,6 +76,22 @@ mpExpected l1 l2 =
     _ ->
       Left "The first cited line of MP must be a conditional."
 
+quantNegEquiv :: PredFormula -> PredFormula -> Bool
+quantNegEquiv a b =
+  qnPair a b || qnPair b a   -- symmetric: either direction is OK
+
+qnPair :: PredFormula -> PredFormula -> Bool
+qnPair from to =
+  case (from, to) of
+    -- ¬∀x φ   ⟺   ∃x ¬φ
+    (Not (ForAll x φ), Exists y (Not ψ)) ->
+      x == y && φ == ψ
+
+    -- ¬∃x φ   ⟺   ∀x ¬φ
+    (Not (Exists x φ), ForAll y (Not ψ)) ->
+      x == y && φ == ψ
+
+    _ -> False      
 
 
 checkLine :: Proof -> ProofLine -> Either String ()
@@ -435,7 +450,25 @@ checkLine proof line =
         _ ->
           Left "❌ ∃ Elim refers to missing lines."
 
-        ------------------------------------------------------
+
+    QN m ->
+      case findLine m of
+        Nothing ->
+          Left "❌ QN refers to missing line."
+
+        Just l1 ->
+          let fromF = formula l1
+              toF   = formula line
+          in
+          if quantNegEquiv fromF toF
+             then
+               if references line == references l1
+                 then Right ()
+                 else Left "❌ QN: dependencies must match the cited line."
+             else
+               Left "❌ QN: goal is not a quantifier-negation equivalent of the cited line."      
+
+    ------------------------------------------------------
     -- =I  (Equality Introduction)
     ------------------------------------------------------
     EqIntro ->
