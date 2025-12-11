@@ -60,7 +60,7 @@ normalizeRule raw =
     "MT"          -> "MT"
     "DN"          -> "DN"
     "CP"          -> "CP"
-
+  
     -- ∧-Intro / Elim
     "∧I"          -> "∧I"
     "&I"          -> "∧I"
@@ -82,6 +82,17 @@ normalizeRule raw =
     "vE"          -> "∨E"
     "\\/E"        -> "∨E"
     "ORE"         -> "∨E"
+
+    -- ↔-Intro / Elim  🔴 NEW
+    "↔I"          -> "↔I"
+    "<->I"        -> "↔I"
+    "IFFI"        -> "↔I"
+    "BIDI"        -> "↔I"
+
+    "↔E"          -> "↔E"
+    "<->E"        -> "↔E"
+    "IFFE"        -> "↔E"
+    "BIDE"        -> "↔E"
 
     -- Negation intro as RAA
     "RAA"         -> "RAA"
@@ -153,6 +164,13 @@ parseJustification phi raw0 =
            "∨I" -> case ns of [m]   -> Right (OrIntro m);    _ -> Left "∨I needs one ref"
            "∨E" -> case ns of [d,a1,p,a2,c] -> Right (OrElim d a1 p a2 c)
                               _              -> Left "∨E needs five refs (d,a1,p,a2,c)"
+           -- 🔴 NEW: biconditional intro / elim
+           "↔I" -> case ns of
+                     [m,n] -> Right (IffIntro m n)
+                     _     -> Left "↔I needs two refs (lines with ϕ→ψ and ψ→ϕ)"
+           "↔E" -> case ns of
+                     [m,n] -> Right (IffElim m n)
+                     _     -> Left "↔E needs two refs (line with ϕ↔ψ and line with ϕ or ψ)"                   
            "∀E" -> case ns of [m]   -> Right (ForallElim m); _ -> Left "∀E needs one ref"
            "∃I" -> case ns of [m]   -> Right (ExistsIntro m); _ -> Left "∃I needs one ref"
            "∃E" -> case ns of [m,a,n] -> Right (ExistsElim m a n)

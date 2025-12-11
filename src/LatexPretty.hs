@@ -64,6 +64,7 @@ ppF st (Not φ)
 ppF st (And φ ψ)     = wrapIfBin st φ ++ " \\wedge " ++ wrapIfBin st ψ
 ppF st (Or φ ψ)      = wrapIfBin st φ ++ " \\vee "   ++ wrapIfBin st ψ
 ppF st (Implies φ ψ) = wrapIfBin st φ ++ " \\to "    ++ wrapIfBin st ψ
+ppF st (Iff φ ψ)     = wrapIfBin st φ ++ " \\leftrightarrow " ++ wrapIfBin st ψ
 
 ppF st (ForAll x φ) =
   "\\forall " ++ varWrapper st x ++ " " ++ wrapIfQuant st φ
@@ -87,6 +88,7 @@ isBinary :: PredFormula -> Bool
 isBinary And{}     = True
 isBinary Or{}      = True
 isBinary Implies{} = True
+isBinary Iff{}     = True      -- NEW
 isBinary _         = False
 
 wrapIfBin :: LaTeXStyle -> PredFormula -> String

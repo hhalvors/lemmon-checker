@@ -22,6 +22,7 @@ propsIn = go
     go (And φ ψ)          = go φ `S.union` go ψ
     go (Or  φ ψ)          = go φ `S.union` go ψ
     go (Implies φ ψ)      = go φ `S.union` go ψ
+    go (Iff φ ψ)      = go φ `S.union` go ψ
     go (ForAll _ φ)       = go φ
     go (Exists _ φ)       = go φ
 
@@ -37,6 +38,7 @@ offendingPreds = go
     go (And φ ψ)      = go φ `S.union` go ψ
     go (Or  φ ψ)      = go φ `S.union` go ψ
     go (Implies φ ψ)  = go φ `S.union` go ψ
+    go (Iff φ ψ)      = go φ `S.union` go ψ
     go (ForAll _ φ)   = go φ
     go (Exists _ φ)   = go φ
 
@@ -87,6 +89,7 @@ atomsIn = go
     go (And φ ψ)         = go φ `S.union` go ψ
     go (Or  φ ψ)         = go φ `S.union` go ψ
     go (Implies φ ψ)     = go φ `S.union` go ψ
+    go (Iff φ ψ)         = go φ `S.union` go ψ
 
 -- A generic version of your allAssignments,
 -- but over arbitrary key type (e.g. PredFormula).
@@ -103,6 +106,7 @@ evalProp env (Not φ)           = not (evalProp env φ)
 evalProp env (And φ ψ)         = evalProp env φ && evalProp env ψ
 evalProp env (Or  φ ψ)         = evalProp env φ || evalProp env ψ
 evalProp env (Implies φ ψ)     = (not (evalProp env φ)) || evalProp env ψ
+evalProp env (Iff φ ψ)         = evalProp env φ == evalProp env ψ   -- NEW
 
 -- For everything that we are treating as atomic in the propositional view:
 evalProp env a@(Predicate _ _) = lookupAtom env a

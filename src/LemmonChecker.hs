@@ -367,6 +367,61 @@ checkLine proof line =
                else Left $ "❌ Invalid CP at line " ++ show (lineNumber line)
         _ -> Left $ "❌ CP refers to missing lines"
 
+    IffIntro from1 from2 ->
+      case (findLine from1, findLine from2) of
+        (Just l1, Just l2) ->
+          let f1    = formula l1
+              f2    = formula l2
+              goal  = formula line
+              depsExpected =
+                Set.union (references l1) (references l2)
+
+              -- Try to extract the pair (ϕ, ψ) from the two implications,
+              -- allowing them in either order.
+              pairFromImps :: Maybe (PredFormula, PredFormula)
+              pairFromImps =
+                case (f1, f2) of
+                  (Implies p q, Implies q' p')
+                    | p == p' && q == q' -> Just (p, q)
+                  (Implies q' p', Implies p q)
+                    | p == p' && q == q' -> Just (p, q)
+                  _ -> Nothing
+
+              valid =
+                case (pairFromImps, goal) of
+                  (Just (p, q), Iff a b) ->
+                       -- conclusion must be p↔q (order-insensitive)
+                       ((a == p && b == q) || (a == q && b == p))
+                    && references line == depsExpected
+                  _ -> False
+          in if valid
+               then Right ()
+               else Left $ "❌ Invalid ↔I at line " ++ show (lineNumber line)
+        _ -> Left "❌ ↔I refers to missing lines"
+
+    IffElim lIff lSide ->
+      case (findLine lIff, findLine lSide) of
+        (Just iffLine, Just sideLine) ->
+          let fIff         = formula iffLine
+              fSide        = formula sideLine
+              goal         = formula line
+              depsExpected =
+                Set.union (references iffLine) (references sideLine)
+
+              valid =
+                case fIff of
+                  Iff p q ->
+                       -- case 1: have p↔q and p, conclude q
+                       ((fSide == p && goal == q)
+                    -- case 2: have p↔q and q, conclude p
+                     || (fSide == q && goal == p))
+                    && references line == depsExpected
+                  _ -> False
+          in if valid
+               then Right ()
+               else Left $ "❌ Invalid ↔E at line " ++ show (lineNumber line)
+        _ -> Left "❌ ↔E refers to missing lines"    
+
     LEM ->
       if isLEMFormula (formula line)
         then Right ()
@@ -539,6 +594,7 @@ getConsts (Not f) = getConsts f
 getConsts (And f g) = Set.union (getConsts f) (getConsts g)
 getConsts (Or f g) = Set.union (getConsts f) (getConsts g)
 getConsts (Implies f g) = Set.union (getConsts f) (getConsts g)
+getConsts (Iff f g) = Set.union (getConsts f) (getConsts g)
 getConsts (ForAll _ f) = getConsts f
 getConsts (Exists _ f) = getConsts f
 

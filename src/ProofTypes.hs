@@ -39,6 +39,7 @@ data PredFormula
   | And PredFormula PredFormula
   | Or PredFormula PredFormula
   | Implies PredFormula PredFormula
+  | Iff PredFormula PredFormula 
   | ForAll String PredFormula
   | Exists String PredFormula
   deriving (Show, Eq, Ord, Generic)
@@ -66,6 +67,9 @@ data Justification
   | EqElim Int Int
   | LEM
   | PropTaut [Int]
+   -- NEW:
+  | IffIntro Int Int   -- from lines m,n: ϕ→ψ and ψ→ϕ
+  | IffElim Int Int    -- from lines m,n: ϕ↔ψ and ϕ (or ψ) to get ψ (or ϕ)
   | QN Int   
   deriving (Show, Eq, Generic)
 
@@ -101,6 +105,7 @@ varsInFormula = go
     go (And p q)          = go p `S.union` go q
     go (Or  p q)          = go p `S.union` go q
     go (Implies p q)      = go p `S.union` go q
+    go (Iff p q)          = go p `S.union` go q          -- NEW
     go (ForAll _ p)       = go p
     go (Exists _ p)       = go p
 
@@ -112,6 +117,7 @@ constsInFormula = go
     go (And p q)          = go p `S.union` go q
     go (Or  p q)          = go p `S.union` go q
     go (Implies p q)      = go p `S.union` go q
+    go (Iff p q)          = go p `S.union` go q          -- NEW
     go (ForAll _ p)       = go p
     go (Exists _ p)       = go p
 
@@ -129,6 +135,7 @@ freeFor x t = go S.empty
     go bound (And p q)         = go bound p && go bound q
     go bound (Or  p q)         = go bound p && go bound q
     go bound (Implies p q)     = go bound p && go bound q
+    go bound (Iff p q)         = go bound p && go bound q     -- NEW
     go bound (ForAll y p)      = go (S.insert y bound) p
     go bound (Exists y p)      = go (S.insert y bound) p
 
@@ -151,6 +158,7 @@ substFree x t = go
     go (And p q)           = And (go p) (go q)
     go (Or  p q)           = Or  (go p) (go q)
     go (Implies p q)       = Implies (go p) (go q)
+    go (Iff p q)           = Iff (go p) (go q)          
     go (ForAll y p)
       | y == x             = ForAll y p      -- x is bound here; stop
       | otherwise          = ForAll y (go p)
@@ -170,6 +178,7 @@ freeVars (Not f)            = freeVars f
 freeVars (And f g)          = freeVars f `S.union` freeVars g
 freeVars (Or f g)           = freeVars f `S.union` freeVars g
 freeVars (Implies f g)      = freeVars f `S.union` freeVars g
+freeVars (Iff f g)          = freeVars f `S.union` freeVars g   -- NEW
 freeVars (ForAll x f)       = S.delete x (freeVars f)
 freeVars (Exists x f)       = S.delete x (freeVars f)
 
@@ -196,6 +205,7 @@ equalUpToConstReplacement a b = goF
     goF (And p1 p2)        (And q1 q2)        = goF p1 q1 && goF p2 q2
     goF (Or  p1 p2)        (Or  q1 q2)        = goF p1 q1 && goF p2 q2
     goF (Implies p q)      (Implies r s)      = goF p r && goF q s
+    goF (Iff p q)          (Iff r s)          = goF p r && goF q s          -- NEW
     goF (ForAll x p)       (ForAll y q)
       | x == y    = goF p q
       | otherwise = False

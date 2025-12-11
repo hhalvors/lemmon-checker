@@ -48,6 +48,7 @@ renderFormula = go
     go (And φ ψ)        = wrapIfBin φ ++ " ∧ " ++ wrapIfBin ψ
     go (Or  φ ψ)        = wrapIfBin φ ++ " ∨ " ++ wrapIfBin ψ
     go (Implies φ ψ)    = wrapIfBin φ ++ " → " ++ wrapIfBin ψ
+    go (Iff φ ψ)       = wrapIfBin φ ++ " <-> " ++ wrapIfBin ψ   -- NEW
 
     go (ForAll x φ)     = "∀" ++ x ++ "(" ++ go φ ++ ")"
     go (Exists x φ)     = "∃" ++ x ++ "(" ++ go φ ++ ")"

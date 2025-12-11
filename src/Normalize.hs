@@ -16,7 +16,8 @@ normalizeSyntax =
     . repl "/\\"  "∧"
     . repl "&"    "∧"
     . repl "->"   "→"
-    . repl "=>"   "→"
+    . repl "<->"  "↔"      -- NEW
+    . repl "<=>"  "↔"      -- (optional, if you want)
     . repl "~"    "¬"
     . replWordCI "not" "¬"
     . replWordCI "and" "∧"
@@ -36,7 +37,8 @@ normalizeFormula =
     . repl "/\\"  "∧"
     . repl "&"    "∧"
     . repl "->"   "→"
-    . repl "=>"   "→"
+    . repl "<->"  "↔"      -- NEW
+    . repl "<=>"  "↔"      -- (optional)
     . repl "~"    "¬"
     . replQuantCI "forall" '∀'
     . replQuantCI "exists" '∃'

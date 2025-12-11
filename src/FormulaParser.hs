@@ -27,8 +27,8 @@ parens :: Parser a -> Parser a
 parens p = lexeme (char '(') *> p <* lexeme (char ')')
 
 -- unicode operators
-opNot, opAnd, opOr, opImp, opFA, opEX :: String
-opNot = "¬"; opAnd = "∧"; opOr = "∨"; opImp = "→"; opFA = "∀"; opEX = "∃"
+opNot, opAnd, opOr, opImp, opIff, opFA, opEX :: String
+opNot = "¬"; opAnd = "∧"; opOr = "∨"; opImp = "→"; opIff = "↔"; opFA = "∀"; opEX = "∃"
 
 -- identifiers
 lowerIdent :: Parser String
@@ -40,9 +40,10 @@ upperIdent = lexeme $ (:[]) <$> satisfy isUpper
 -- entry points ------------------------------------------------------
 
 parseFormula :: String -> Either String PredFormula
-parseFormula s = case parse (spaces *> pImp Set.empty <* eof) "<input>" s of
-  Left e  -> Left (show e)
-  Right f -> Right f
+parseFormula s =
+  case parse (spaces *> pIff Set.empty <* eof) "<input>" s of
+    Left e  -> Left (show e)
+    Right f -> Right f
 
 runParser :: String -> Either String PredFormula
 runParser = parseFormula
@@ -52,6 +53,10 @@ runParser = parseFormula
 op :: String -> (PredFormula -> PredFormula -> PredFormula)
    -> Parser (PredFormula -> PredFormula -> PredFormula)
 op s c = symbol s *> pure c
+
+-- NEW: top-level biconditional parser
+pIff :: Set String -> Parser PredFormula
+pIff env = chainr1 (pImp env) (op opIff Iff)
 
 pImp :: Set String -> Parser PredFormula
 pImp env = chainr1 (pAndOr env) (op opImp Implies)
@@ -64,7 +69,7 @@ pUnary env =
       try (pQuant env)
   P.<|> (Not <$> (symbol opNot *> pUnary env))
   P.<|> pAtom env
-  P.<|> parens (pImp env)
+  P.<|> parens (pIff env)
 
 -- quantifiers -------------------------------------------------------
 

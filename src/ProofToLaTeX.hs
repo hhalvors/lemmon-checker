@@ -113,6 +113,8 @@ ppJust j =
         EqElim _ _           -> "=E"
         LEM                  -> "LEM"
         PropTaut _           -> "prop taut"   -- NEW
+        IffIntro _ _         -> "$\\leftrightarrow$I"  -- NEW
+        IffElim _ _          -> "$\\leftrightarrow$E"  -- NEW
         QN _                 -> "QN"          -- NEW
 
       nums :: [Int]
@@ -136,6 +138,8 @@ ppJust j =
         LEM                  -> []
         PropTaut is          -> is           -- NEW
         QN m                 -> [m]          -- NEW
+        IffIntro m n         -> [m,n]
+        IffElim m n          -> [m,n]
 
       numsTxt = intercalate "," (map show nums)
   in if null nums then tag else numsTxt ++ " " ++ tag
