@@ -14,8 +14,9 @@ import Debug.Trace (trace)
 import           Control.Monad   (forM_)
 import           Text.Printf      (printf)
 import PrettyPrint (renderFormula)
-import Data.List   (intercalate, replicate, find)
+import Data.List   (intercalate, replicate, find, foldl')
 import TruthTable (isPropTaut)
+import Control.Applicative ((<|>))
 
 isLEMFormula :: PredFormula -> Bool
 isLEMFormula f =
@@ -64,7 +65,55 @@ checkUILiberal x body phi =
     Just c  -> case checkUIWithConst x c body phi of
                  Right () -> Right c
                  Left err -> Left err
-    Nothing -> Left "UI error: could not infer which constant was generalized"          
+    Nothing -> Left "UI error: could not infer which constant was generalized"
+
+collectForalls :: PredFormula -> ([String], PredFormula)
+collectForalls (ForAll x body) =
+  let (xs, core) = collectForalls body
+  in (x:xs, core)
+collectForalls f = ([], f)
+
+-- Try to instantiate the first k vars with constants (or "" if var not free)
+-- so that we reach goal exactly.
+inferWitnessConstsK
+  :: [String]      -- vars (x1..xn)
+  -> PredFormula   -- core
+  -> Int           -- k
+  -> PredFormula   -- goal
+  -> Maybe [String]
+inferWitnessConstsK vars core k goal =
+  go (take k vars) core
+  where
+    consts :: [String]
+    consts = Set.toList (getConsts goal)
+
+    go [] f =
+      if f == goal then Just [] else Nothing
+
+    go (x:xs) f
+      | not (x `Set.member` freeVars f) =
+          -- x not free: UE does nothing; no constant needed at this step
+          ("" :) <$> go xs f
+      | otherwise =
+          -- choose a constant from those appearing in the goal
+          foldr
+            (\c acc ->
+               acc <|>
+               let f' = substFree x (Const c) f
+               in  (c :) <$> go xs f')
+            Nothing
+            consts
+
+-- Full multi-UE inference from a source formula to a goal:
+inferWitnessConstsMany
+  :: PredFormula
+  -> PredFormula
+  -> Maybe [String]
+inferWitnessConstsMany src goal =
+  let (vars, core) = collectForalls src
+      n = length vars
+      try k = inferWitnessConstsK vars core k goal
+  in foldr (\k acc -> acc <|> try k) Nothing [1..n]    
 
 mpExpected :: ProofLine -> ProofLine -> Either String (PredFormula, Set.Set Int)
 mpExpected l1 l2 =
@@ -281,19 +330,34 @@ checkLine proof line =
           Left "❌ ∀ Elim refers to missing line"
 
         Just l1 ->
-          case formula l1 of
-            ForAll x body ->
-              let goal = formula line in
-              case inferWitnessConst x body goal of
-                Nothing ->
-                  Left "❌ ∀ Elim: goal is not a constant-instance of the ∀-body."
-                Just _ ->
-                  if references line == references l1
-                    then Right ()
-                    else Left "❌ ∀ Elim: dependencies must match the ∀ line."
+          case inferWitnessConstsMany (formula l1) (formula line) of
+            Nothing ->
+              Left "❌ ∀ Elim: goal is not a (possibly multi-step) constant-instance of the ∀-prefix."
+            Just _cs ->
+              if references line == references l1
+                then Right ()
+                else Left "❌ ∀ Elim: dependencies must match the ∀ line."
 
-            _ ->
-              Left "❌ ∀ Elim expects a universally quantified formula (∀x φ)."
+
+    -- ForallElim m ->
+    --   case findLine m of
+    --     Nothing ->
+    --       Left "❌ ∀ Elim refers to missing line"
+
+    --     Just l1 ->
+    --       case formula l1 of
+    --         ForAll x body ->
+    --           let goal = formula line in
+    --           case inferWitnessConst x body goal of
+    --             Nothing ->
+    --               Left "❌ ∀ Elim: goal is not a constant-instance of the ∀-body."
+    --             Just _ ->
+    --               if references line == references l1
+    --                 then Right ()
+    --                 else Left "❌ ∀ Elim: dependencies must match the ∀ line."
+
+    --         _ ->
+    --           Left "❌ ∀ Elim expects a universally quantified formula (∀x φ)."
 
               
 
