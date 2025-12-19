@@ -14,6 +14,7 @@ module ProofTypes
   , constsInFormula
   , isEq
   , equalUpToConstReplacement
+  , abstractConstFree
   ) where
 
 import GHC.Generics (Generic)
@@ -144,6 +145,36 @@ freeFor x t = go S.empty
       | v == x    = S.null (vt `S.intersection` bound)  -- no capture allowed
       | otherwise = True
     termOK _     (Const _)     = True
+
+-- Abstraction: replace constant a with variable x (fail if capture risk)
+-- Intended use: abstractConstFree (Const a) (Var x) f  ~=  f[x/a]
+abstractConstFree :: Term -> Term -> PredFormula -> Maybe PredFormula
+abstractConstFree (Const a) (Var x) f = go f
+  where
+    subT :: Term -> Term
+    subT c@(Const c')
+      | c' == a    = Var x
+      | otherwise  = c
+    subT v@(Var _) = v
+
+    go :: PredFormula -> Maybe PredFormula
+    go (Predicate name ts) = Just (Predicate name (map subT ts))
+    go (Not p)             = Not <$> go p
+    go (And p q)           = And <$> go p <*> go q
+    go (Or  p q)           = Or  <$> go p <*> go q
+    go (Implies p q)       = Implies <$> go p <*> go q
+    go (Iff p q)           = Iff <$> go p <*> go q
+
+    -- Fail on capture risk: we refuse to introduce Var x anywhere under a binder for x
+    go (ForAll y p)
+      | y == x             = Nothing
+      | otherwise          = ForAll y <$> go p
+    go (Exists y p)
+      | y == x             = Nothing
+      | otherwise          = Exists y <$> go p
+
+-- If called with the “wrong-shaped” terms, we just fail.
+abstractConstFree _ _ _ = Nothing    
 
 -- Substitution of free occurrences only (no α-renaming) ---------------
 substFree :: String -> Term -> PredFormula -> PredFormula

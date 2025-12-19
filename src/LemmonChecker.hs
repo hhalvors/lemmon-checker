@@ -11,7 +11,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Maybe (fromMaybe)
 import Debug.Trace (trace)
-import           Control.Monad   (forM_)
+import Control.Monad   (forM_, foldM)
 import           Text.Printf      (printf)
 import PrettyPrint (renderFormula)
 import Data.List   (intercalate, replicate, find, foldl')
@@ -72,6 +72,11 @@ collectForalls (ForAll x body) =
   let (xs, core) = collectForalls body
   in (x:xs, core)
 collectForalls f = ([], f)
+
+elimCount :: [String] -> [String] -> Maybe Int
+elimCount srcVars dstVars =
+  let k = length srcVars - length dstVars
+  in if k >= 0 && drop k srcVars == dstVars then Just k else Nothing
 
 -- Try to instantiate the first k vars with constants (or "" if var not free)
 -- so that we reach goal exactly.
@@ -330,13 +335,24 @@ checkLine proof line =
           Left "❌ ∀ Elim refers to missing line"
 
         Just l1 ->
-          case inferWitnessConstsMany (formula l1) (formula line) of
+          let src = formula l1
+              dst = formula line
+
+              (srcVars, srcCore) = collectForalls src
+              (dstVars, dstCore) = collectForalls dst
+          in
+          case elimCount srcVars dstVars of
             Nothing ->
-              Left "❌ ∀ Elim: goal is not a (possibly multi-step) constant-instance of the ∀-prefix."
-            Just _cs ->
-              if references line == references l1
-                then Right ()
-                else Left "❌ ∀ Elim: dependencies must match the ∀ line."
+              Left "❌ ∀ Elim: destination does not have a ∀-prefix that is a suffix of the source."
+
+            Just k ->
+              case inferWitnessConstsK srcVars srcCore k dstCore of
+                Nothing ->
+                  Left "❌ ∀ Elim: could not find constants that instantiate the eliminated ∀-variables."
+                Just _cs ->
+                  if references line == references l1
+                    then Right ()
+                    else Left "❌ ∀ Elim: dependencies must match the ∀ line."
 
 
     -- ForallElim m ->
@@ -383,37 +399,93 @@ checkLine proof line =
 
     ForallIntro m ->
       case findLine m of
-        Just l1 ->
-          case formula line of
-            ForAll x body ->
-              case inferWitnessConst x body (formula l1) of
-                Nothing ->
-                  Left $ "❌ ∀ Intro: could not recognize the instance at line "
-                      ++ show m ++ " as φ(" ++ x ++ "←c)."
-
-                Just a ->
-                  let occursInGamma = a `Set.member` freeConstsInAssumptions proof (references l1)
-                      expectedRefs  = references l1
-                      actualRefs    = references line
-                      -- NEW: forbid any leftover occurrences of a in φ(x)
-                      aInBody       = a `Set.member` (getConsts body)
-                  in if aInBody
-                       then Left $ "❌ ∀ Intro: constant \"" ++ a
-                             ++ "\" still appears in φ(x). All occurrences must be generalized."
-                     else if occursInGamma
-                       then Left $ "❌ ∀ Intro: constant \"" ++ a
-                             ++ "\" appears in undischarged assumptions "
-                             ++ show (references l1)
-                     else if actualRefs /= expectedRefs
-                       then Left $ "❌ ∀ Intro: dependencies must match the instance line. "
-                             ++ "Expected " ++ show (Set.toList expectedRefs)
-                             ++ ", got "     ++ show (Set.toList actualRefs)
-                     else Right ()
-            _ ->
-              Left $ "❌ ∀ Intro: goal at line "
-                   ++ show (lineNumber line) ++ " is not a universal sentence."
         Nothing ->
           Left $ "❌ ∀ Intro refers to missing line " ++ show m
+
+        Just l1 ->
+          let src          = formula l1
+              expectedRefs = references l1
+              actualRefs   = references line
+              goal         = formula line
+              (vars, core) = collectForalls goal
+              k            = length vars
+          in
+          if k == 0
+            then Left $ "❌ ∀ Intro: goal at line "
+                     ++ show (lineNumber line) ++ " is not a universal sentence."
+            else
+              case inferWitnessConstsK vars core k src of
+                Nothing ->
+                  Left $ "❌ ∀ Intro: could not recognize line " ++ show m
+                      ++ " as an instance of the universal goal."
+
+                Just cs ->
+                  let pairs = [ (x,c) | (x,c) <- zip vars cs, c /= "" ]
+
+                      -- (1) Abstraction check: abstract the instance back to the core
+                      absCoreM =
+                        foldM
+                          (\f (x,c) -> abstractConstFree (Const c) (Var x) f)
+                          src
+                          pairs
+
+                      -- (2) Arbitrariness check: none of the generalized constants in Γ
+                      gammaConsts = freeConstsInAssumptions proof expectedRefs
+                      badConsts   = [ c | (_,c) <- pairs, c `Set.member` gammaConsts ]
+
+                  in case absCoreM of
+                       Nothing ->
+                         Left $ "❌ ∀ Intro: variable-capture risk while abstracting. "
+                             ++ "Choose different bound variable names (or α-rename)."
+
+                       Just absCore ->
+                         if absCore /= core
+                           then Left $ "❌ ∀ Intro: abstraction mismatch. "
+                                    ++ "The goal core is not the result of abstracting the instance."
+                         else if not (null badConsts)
+                           then Left $ "❌ ∀ Intro: constant(s) "
+                                    ++ show badConsts
+                                    ++ " appear in undischarged assumptions "
+                                    ++ show (Set.toList expectedRefs)
+                         else if actualRefs /= expectedRefs
+                           then Left $ "❌ ∀ Intro: dependencies must match the instance line. "
+                                    ++ "Expected " ++ show (Set.toList expectedRefs)
+                                    ++ ", got "     ++ show (Set.toList actualRefs)
+                         else Right ()          
+
+    -- ForallIntro m ->
+    --   case findLine m of
+    --     Just l1 ->
+    --       case formula line of
+    --         ForAll x body ->
+    --           case inferWitnessConst x body (formula l1) of
+    --             Nothing ->
+    --               Left $ "❌ ∀ Intro: could not recognize the instance at line "
+    --                   ++ show m ++ " as φ(" ++ x ++ "←c)."
+
+    --             Just a ->
+    --               let occursInGamma = a `Set.member` freeConstsInAssumptions proof (references l1)
+    --                   expectedRefs  = references l1
+    --                   actualRefs    = references line
+    --                   -- NEW: forbid any leftover occurrences of a in φ(x)
+    --                   aInBody       = a `Set.member` (getConsts body)
+    --               in if aInBody
+    --                    then Left $ "❌ ∀ Intro: constant \"" ++ a
+    --                          ++ "\" still appears in φ(x). All occurrences must be generalized."
+    --                  else if occursInGamma
+    --                    then Left $ "❌ ∀ Intro: constant \"" ++ a
+    --                          ++ "\" appears in undischarged assumptions "
+    --                          ++ show (references l1)
+    --                  else if actualRefs /= expectedRefs
+    --                    then Left $ "❌ ∀ Intro: dependencies must match the instance line. "
+    --                          ++ "Expected " ++ show (Set.toList expectedRefs)
+    --                          ++ ", got "     ++ show (Set.toList actualRefs)
+    --                  else Right ()
+    --         _ ->
+    --           Left $ "❌ ∀ Intro: goal at line "
+    --                ++ show (lineNumber line) ++ " is not a universal sentence."
+    --     Nothing ->
+    --       Left $ "❌ ∀ Intro refers to missing line " ++ show m
     
     CP from to ->
       case (findLine from, findLine to) of
