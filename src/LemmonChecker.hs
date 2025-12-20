@@ -73,6 +73,12 @@ collectForalls (ForAll x body) =
   in (x:xs, core)
 collectForalls f = ([], f)
 
+collectExists :: PredFormula -> ([String], PredFormula)
+collectExists (Exists x body) =
+  let (xs, core) = collectExists body
+  in (x:xs, core)
+collectExists f = ([], f)
+
 elimCount :: [String] -> [String] -> Maybe Int
 elimCount srcVars dstVars =
   let k = length srcVars - length dstVars
@@ -129,24 +135,6 @@ mpExpected l1 l2 =
         else Right (q, Set.union (references l1) (references l2))
     _ ->
       Left "The first cited line of MP must be a conditional."
-
-quantNegEquiv :: PredFormula -> PredFormula -> Bool
-quantNegEquiv a b =
-  qnPair a b || qnPair b a   -- symmetric: either direction is OK
-
-qnPair :: PredFormula -> PredFormula -> Bool
-qnPair from to =
-  case (from, to) of
-    -- ¬∀x φ   ⟺   ∃x ¬φ
-    (Not (ForAll x φ), Exists y (Not ψ)) ->
-      x == y && φ == ψ
-
-    -- ¬∃x φ   ⟺   ∀x ¬φ
-    (Not (Exists x φ), ForAll y (Not ψ)) ->
-      x == y && φ == ψ
-
-    _ -> False      
-
 
 checkLine :: Proof -> ProofLine -> Either String ()
 checkLine proof line =
@@ -586,60 +574,153 @@ checkLine proof line =
     ExistsElim m m1 n ->
       case (findLine m, findLine m1, findLine n) of
         (Just lExists, Just lAssume, Just lResult) ->
-          case formula lExists of
-            Exists x body ->
-              let phiA        = formula lAssume          -- supposed instance: φ(a)
-                  psi         = formula lResult          -- result proved under the assumption
-                  goal        = formula line             -- current line must repeat ψ
-                  isAssumption = justification lAssume == Assumption
 
-                  -- references: discharge the assumption m1 from lResult’s refs,
-                  -- and carry over the ∃-line’s refs
-                  refExists   = references lExists
-                  refResult   = references lResult
-                  deltaRefs   = Set.delete (lineNumber lAssume) refResult
-                  expectedRefs = Set.union refExists deltaRefs
+          let src          = formula lExists        -- ∃-line formula
+              phiA         = formula lAssume        -- assumed instance (may retain some ∃'s)
+              psi          = formula lResult        -- result derived under the assumption
+              goal         = formula line           -- current line must repeat psi
+              isAssumption = justification lAssume == Assumption
 
-                  -- try to infer a constant a with phiA == substFree x (Const a) body
-                  aMaybe      = inferWitnessConst x body phiA
-              in
-                if not isAssumption then
-                  Left $ "❌ ∃ Elim: line " ++ show m1 ++ " must be an Assumption."
-                else case aMaybe of
-                  Nothing ->
-                    Left $ "❌ ∃ Elim: the assumed instance at line " ++ show m1
-                        ++ " is not of the form φ[a/x] for the ∃-body."
-                  Just a ->
-                    -- freshness side-condition for a:
-                    --  (i) not in the ∃-body,
-                    -- (ii) not in the final conclusion ψ,
-                    --(iii) not in any undischarged assumptions (deltaRefs)
-                    let inExistsBody   = a `Set.member` getConsts body
-                        inGoalResult   = a `Set.member` getConsts psi
-                        inOtherRefs    = a `Set.member` getConstsFromRefs proof deltaRefs
+              -- Dependencies: discharge the assumption line from the result’s refs,
+              -- and include the ∃-line’s refs.
+              refExists    = references lExists
+              refResult    = references lResult
+              deltaRefs    = Set.delete (lineNumber lAssume) refResult
+              expectedRefs = Set.union refExists deltaRefs
 
-                        whereBad =
-                          [ ("the ∃-formula’s body", inExistsBody)
-                          , ("the conclusion ψ",      inGoalResult)
-                          , ("undischarged assumptions " ++ show (Set.toList deltaRefs), inOtherRefs)
-                          ]
-                        badPlaces = [ place | (place, True) <- whereBad ]
-                    in if not (null badPlaces) then
-                         Left $ "❌ ∃ Elim: the witness constant \"" ++ a ++ "\" must be fresh, "
-                             ++ "but it occurs in " ++ unwords (map (\p -> "[" ++ p ++ "]") badPlaces) ++ "."
-                       else if goal /= psi then
-                         Left $ "❌ ∃ Elim: the conclusion at line " ++ show (lineNumber line)
-                             ++ " must repeat ψ from line " ++ show n ++ "."
-                       else if references line /= expectedRefs then
-                         Left $ "❌ ∃ Elim: incorrect references.\n"
-                             ++ "  Expected: " ++ show (Set.toList expectedRefs) ++ "\n"
-                             ++ "  Found:    " ++ show (Set.toList (references line))
-                       else
-                         Right ()
-            _ ->
-              Left $ "❌ ∃ Elim: line " ++ show m ++ " must contain an existential formula (∃x φ)."
+              -- Split off leading ∃-prefixes
+              (srcVars, srcCore) = collectExists src
+              (dstVars, dstCore) = collectExists phiA
+          in
+            if null srcVars then
+              Left $ "❌ ∃ Elim: line " ++ show m ++ " must begin with an existential quantifier."
+            else if not isAssumption then
+              Left $ "❌ ∃ Elim: line " ++ show m1 ++ " must be an Assumption."
+            else
+              case elimCount srcVars dstVars of
+                Nothing ->
+                  Left $ "❌ ∃ Elim: the assumption line " ++ show m1 ++ " must keep exactly the remaining\n"
+                  ++ "  existential prefix (a suffix of the ∃-line's prefix, in the same order)."
+                Just k ->
+                  -- Template = the ∃-body AFTER eliminating the first k quantifiers:
+                  --   template = ∃ dstVars . srcCore
+                  let template = foldr Exists srcCore dstVars
+                  in
+                  case inferWitnessConstsK srcVars template k phiA of
+                    Nothing ->
+                      Left $ "❌ ∃ Elim: could not recognize line " ++ show m1
+                          ++ " as an instance of the existential body after eliminating "
+                          ++ show k ++ " quantifier(s)."
+                    Just cs ->
+                      let pairs =
+                            [ (x,c)
+                            | (x,c) <- zip (take k srcVars) cs
+                            , c /= ""
+                            ]
+
+                          absTemplateM =
+                            foldM
+                              (\f (x,c) -> abstractConstFree (Const c) (Var x) f)
+                              phiA
+                              pairs
+                      in
+                      case absTemplateM of
+                        Nothing ->
+                          Left $ "❌ ∃ Elim: variable-name clash while abstracting witnesses back into variables.\n"
+                              ++ "  Please α-rename bound variables (use fresh variable names)."
+                        Just absTemplate ->
+                          if absTemplate /= template then
+                            Left $ "❌ ∃ Elim: abstraction mismatch.\n"
+                                ++ "  The assumption line is not the right instance of the existential body."
+                          else
+                            -- Freshness side-conditions for the witness constants:
+                            --  (i) not in the final conclusion ψ,
+                            -- (ii) not in any undischarged assumptions (deltaRefs).
+                            -- (Freshness w.r.t. the existential body is enforced by the abstraction check.)
+                            let witnesses   = [ c | (_,c) <- pairs ]
+                                badInPsi    = [ c | c <- witnesses, c `Set.member` getConsts psi ]
+                                badInRefs   = [ c | c <- witnesses
+                                                , c `Set.member` getConstsFromRefs proof deltaRefs
+                                                ]
+                            in
+                            if not (null badInPsi) then
+                              Left $ "❌ ∃ Elim: witness constant(s) " ++ show badInPsi
+                                  ++ " occur in the conclusion ψ (line " ++ show n ++ ")."
+                            else if not (null badInRefs) then
+                              Left $ "❌ ∃ Elim: witness constant(s) " ++ show badInRefs
+                                  ++ " occur in undischarged assumptions "
+                                  ++ show (Set.toList deltaRefs) ++ "."
+                            else if goal /= psi then
+                              Left $ "❌ ∃ Elim: the conclusion at line " ++ show (lineNumber line)
+                                  ++ " must repeat ψ from line " ++ show n ++ "."
+                            else if references line /= expectedRefs then
+                              Left $ "❌ ∃ Elim: incorrect references.\n"
+                                  ++ "  Expected: " ++ show (Set.toList expectedRefs) ++ "\n"
+                                  ++ "  Found:    " ++ show (Set.toList (references line))
+                            else
+                              Right ()
+
         _ ->
-          Left "❌ ∃ Elim refers to missing lines."
+          Left "❌ ∃ Elim refers to missing lines."    
+             
+
+    -- ExistsElim m m1 n ->
+    --   case (findLine m, findLine m1, findLine n) of
+    --     (Just lExists, Just lAssume, Just lResult) ->
+    --       case formula lExists of
+    --         Exists x body ->
+    --           let phiA        = formula lAssume          -- supposed instance: φ(a)
+    --               psi         = formula lResult          -- result proved under the assumption
+    --               goal        = formula line             -- current line must repeat ψ
+    --               isAssumption = justification lAssume == Assumption
+
+    --               -- references: discharge the assumption m1 from lResult’s refs,
+    --               -- and carry over the ∃-line’s refs
+    --               refExists   = references lExists
+    --               refResult   = references lResult
+    --               deltaRefs   = Set.delete (lineNumber lAssume) refResult
+    --               expectedRefs = Set.union refExists deltaRefs
+
+    --               -- try to infer a constant a with phiA == substFree x (Const a) body
+    --               aMaybe      = inferWitnessConst x body phiA
+    --           in
+    --             if not isAssumption then
+    --               Left $ "❌ ∃ Elim: line " ++ show m1 ++ " must be an Assumption."
+    --             else case aMaybe of
+    --               Nothing ->
+    --                 Left $ "❌ ∃ Elim: the assumed instance at line " ++ show m1
+    --                     ++ " is not of the form φ[a/x] for the ∃-body."
+    --               Just a ->
+    --                 -- freshness side-condition for a:
+    --                 --  (i) not in the ∃-body,
+    --                 -- (ii) not in the final conclusion ψ,
+    --                 --(iii) not in any undischarged assumptions (deltaRefs)
+    --                 let inExistsBody   = a `Set.member` getConsts body
+    --                     inGoalResult   = a `Set.member` getConsts psi
+    --                     inOtherRefs    = a `Set.member` getConstsFromRefs proof deltaRefs
+
+    --                     whereBad =
+    --                       [ ("the ∃-formula’s body", inExistsBody)
+    --                       , ("the conclusion ψ",      inGoalResult)
+    --                       , ("undischarged assumptions " ++ show (Set.toList deltaRefs), inOtherRefs)
+    --                       ]
+    --                     badPlaces = [ place | (place, True) <- whereBad ]
+    --                 in if not (null badPlaces) then
+    --                      Left $ "❌ ∃ Elim: the witness constant \"" ++ a ++ "\" must be fresh, "
+    --                          ++ "but it occurs in " ++ unwords (map (\p -> "[" ++ p ++ "]") badPlaces) ++ "."
+    --                    else if goal /= psi then
+    --                      Left $ "❌ ∃ Elim: the conclusion at line " ++ show (lineNumber line)
+    --                          ++ " must repeat ψ from line " ++ show n ++ "."
+    --                    else if references line /= expectedRefs then
+    --                      Left $ "❌ ∃ Elim: incorrect references.\n"
+    --                          ++ "  Expected: " ++ show (Set.toList expectedRefs) ++ "\n"
+    --                          ++ "  Found:    " ++ show (Set.toList (references line))
+    --                    else
+    --                      Right ()
+    --         _ ->
+    --           Left $ "❌ ∃ Elim: line " ++ show m ++ " must contain an existential formula (∃x φ)."
+    --     _ ->
+    --       Left "❌ ∃ Elim refers to missing lines."
 
 
     QN m ->

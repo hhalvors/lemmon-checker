@@ -15,6 +15,7 @@ module ProofTypes
   , isEq
   , equalUpToConstReplacement
   , abstractConstFree
+  , quantNegEquiv
   ) where
 
 import GHC.Generics (Generic)
@@ -244,4 +245,37 @@ equalUpToConstReplacement a b = goF
       | x == y    = goF p q
       | otherwise = False
     goF _ _ = False
+
+
+-- auxiliaries for quantifier negation equivalence
+
+-- One-step quantifier-negation push at the first available place
+-- along the quantifier prefix.
+pushNotPrefixOnce :: PredFormula -> Maybe PredFormula
+pushNotPrefixOnce f =
+  case f of
+    Not (ForAll x body) -> Just (Exists x (Not body))
+    Not (Exists x body) -> Just (ForAll x (Not body))
+    ForAll x p          -> ForAll x <$> pushNotPrefixOnce p
+    Exists x p          -> Exists x <$> pushNotPrefixOnce p
+    _                   -> Nothing
+
+-- Chain of 0-or-more pushes (always finite).
+pushNotPrefixChain :: PredFormula -> [PredFormula]
+pushNotPrefixChain f =
+  f : case pushNotPrefixOnce f of
+        Nothing -> []
+        Just f' -> pushNotPrefixChain f'
+
+-- Directional: only meaningful when 'from' begins with Not.
+qnReachable :: PredFormula -> PredFormula -> Bool
+qnReachable from to =
+  case from of
+    Not _ -> to `elem` pushNotPrefixChain from
+    _     -> False
+
+-- Symmetric equivalence: either direction is OK.
+quantNegEquiv :: PredFormula -> PredFormula -> Bool
+quantNegEquiv a b =
+  qnReachable a b || qnReachable b a
 
