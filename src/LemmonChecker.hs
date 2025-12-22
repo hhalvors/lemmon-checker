@@ -369,17 +369,33 @@ checkLine proof line =
           Left "❌ ∃ Intro refers to missing line"
 
         Just l1 ->
-          let goal        = formula line
-              premise     = formula l1
+          let goal         = formula line
+              premise      = formula l1
               (vars, core) = collectExists goal
-              k           = length vars
+              k            = length vars
+
+              -- rebuild ∃-prefix from a list of variables
+              prefixExists :: [String] -> PredFormula -> PredFormula
+              prefixExists vs f = foldr Exists f vs
+
+              -- Try t = 0..k: instantiate first t vars, keep remaining ∃’s
+              tryAllT :: Maybe [String]
+              tryAllT =
+                foldr
+                  (\t acc ->
+                     acc <|>
+                     let tailCore = prefixExists (drop t vars) core
+                     in  inferWitnessConstsK vars tailCore t premise)
+                  Nothing
+                  [0..k]
+
           in
           if k == 0
             then Left "❌ ∃ Intro expects an existentially quantified formula (∃x φ)."
             else
-              case inferWitnessConstsK vars core k premise of
+              case tryAllT of
                 Nothing ->
-                  Left "❌ ∃ Intro: the cited line is not a (possibly multi-step) witness instance of the goal’s core."
+                  Left "❌ ∃ Intro: the cited line is not a (possibly multi-step) witness instance of the goal (allowing leftover ∃’s)."
                 Just _cs ->
                   if references line == references l1
                      then Right ()
