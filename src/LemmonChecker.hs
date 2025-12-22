@@ -363,27 +363,27 @@ checkLine proof line =
     --         _ ->
     --           Left "❌ ∀ Elim expects a universally quantified formula (∀x φ)."
 
-              
-
     ExistsIntro m ->
       case findLine m of
         Nothing ->
           Left "❌ ∃ Intro refers to missing line"
 
         Just l1 ->
-          case formula line of
-            Exists x body ->
-              let premise = formula l1 in
-              -- Does there exist a constant a with premise == substFree x (Const a) body?
-              case inferWitnessConst x body premise of
+          let goal        = formula line
+              premise     = formula l1
+              (vars, core) = collectExists goal
+              k           = length vars
+          in
+          if k == 0
+            then Left "❌ ∃ Intro expects an existentially quantified formula (∃x φ)."
+            else
+              case inferWitnessConstsK vars core k premise of
                 Nothing ->
-                  Left "❌ ∃ Intro: the cited line is not an instance of the goal’s body (no constant a with φ[a/x] = premise)."
-                Just _a ->
+                  Left "❌ ∃ Intro: the cited line is not a (possibly multi-step) witness instance of the goal’s core."
+                Just _cs ->
                   if references line == references l1
                      then Right ()
                      else Left "❌ ∃ Intro: dependencies must match the cited line."
-            _ ->
-              Left "❌ ∃ Intro expects an existentially quantified formula (∃x φ)."
 
     ForallIntro m ->
       case findLine m of
