@@ -2,3 +2,7 @@ resolver: lts-21.14
 
 packages:
 - .
+
+package-indices:
+  - name: Hackage
+    download-prefix: https://hackage.haskell.org/
