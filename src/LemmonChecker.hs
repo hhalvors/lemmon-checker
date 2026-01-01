@@ -6,6 +6,9 @@ module LemmonChecker
      , LineReport(..) 
      ) where
 
+-- adding a comment for testing purposes
+-- more comment
+
 import ProofTypes
 import Data.Set (Set)
 import qualified Data.Set as Set
