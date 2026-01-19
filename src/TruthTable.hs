@@ -1,9 +1,15 @@
 -- src/TruthTable.hs
 {-# LANGUAGE TupleSections #-}
+
 module TruthTable
-  ( truthTable          -- :: PredFormula -> Either String [(Map String Bool, Bool)]
+  ( truthTable
   , propsIn
   , isPropTaut
+  , TruthTableData(..)
+  , TTToken(..)
+  , Tok(..)
+  , TTRow(..)
+  , buildTruthTableData
   ) where
 
 import           ProofTypes
@@ -11,6 +17,8 @@ import           ModelSemantics                  (Model(..), evalClosed)
 import qualified Data.Set            as S
 import qualified Data.Map.Strict     as M
 import           Data.Map.Strict     (Map)
+import qualified Data.List as L
+import LatexPretty (isBinary)
 
 -- collect 0-ary predicate names
 propsIn :: PredFormula -> S.Set String
@@ -134,3 +142,115 @@ isPropTaut premises conclusion =
       valuations =
         if null atoms then [M.empty] else allAssignmentsAtoms atoms
   in all (\env -> evalProp env combined) valuations
+
+--------------------------------------------------------------------------------
+-- Full token/value matrix truth table (Rieppel-style)
+--------------------------------------------------------------------------------
+
+data Tok
+  = TLParen
+  | TRParen
+  | TNot
+  | TAnd
+  | TOr
+  | TImpl
+  | TIff
+  | TAtom String
+  | TConst Bool
+  deriving (Eq, Ord, Show)
+
+-- A token column, optionally annotated with the subformula whose truth-value
+-- belongs in that column (Nothing for parentheses).
+data TTToken = TTToken
+  { tokSym   :: Tok
+  , tokForm  :: Maybe PredFormula
+  } deriving (Eq, Show)
+
+data TTRow = TTRow
+  { rowValuation :: Map String Bool
+  , rowTokVals   :: [Maybe Bool]      -- aligned with ttTokens
+  } deriving (Eq, Show)
+
+data TruthTableData = TruthTableData
+  { ttProps  :: [String]   -- valuation columns, sorted
+  , ttTokens :: [TTToken]  -- formula token columns
+  , ttRows   :: [TTRow]
+  } deriving (Eq, Show)
+
+-- Build the entire token/value matrix.
+-- Requires propositional-only (0-ary predicates only), same as truthTable.
+buildTruthTableData :: PredFormula -> Either String TruthTableData
+buildTruthTableData φ =
+  let offenders = S.toList (offendingPreds φ)
+  in if not (null offenders)
+        then Left $ "Non-propositional symbols present (arity > 0): " ++ show offenders
+        else
+          let props  = L.sort (S.toList (propsIn φ))
+              vals   = allAssignments props
+              toks   = tokensTop φ
+          in do
+            rows <- traverse (mkRow toks) vals
+            pure $ TruthTableData props toks rows
+  where
+    mkRow :: [TTToken] -> Map String Bool -> Either String TTRow
+    mkRow toks valMap = do
+      let m = modelFromValuation valMap
+      vs <- traverse (evalTok m) toks
+      pure $ TTRow valMap vs
+
+    evalTok :: Model -> TTToken -> Either String (Maybe Bool)
+    evalTok _ (TTToken _ Nothing)   = Right Nothing
+    evalTok m (TTToken _ (Just ψ))  = Just <$> evalClosed m ψ
+
+--------------------------------------------------------------------------------
+-- Tokenization (no outermost parentheses; Not binds tightly unless over binary)
+--------------------------------------------------------------------------------
+
+tokensTop :: PredFormula -> [TTToken]
+tokensTop = stripOuterParens . tok False
+  where
+    -- tok needParens φ: if needParens=True and φ is binary, wrap in ( ... )
+    tok :: Bool -> PredFormula -> [TTToken]
+    tok needParens f@(And φ ψ)     = bin needParens TAnd  f φ ψ
+    tok needParens f@(Or  φ ψ)     = bin needParens TOr   f φ ψ
+    tok needParens f@(Implies φ ψ) = bin needParens TImpl f φ ψ
+    tok needParens f@(Iff φ ψ)     = bin needParens TIff  f φ ψ
+
+    tok _ (Boolean b) = [TTToken (TConst b) (Just (Boolean b))]
+
+    tok _ p@(Predicate name args)
+      | null args  = [TTToken (TAtom name) (Just p)]
+      | otherwise  = [TTToken (TAtom name) (Just p)]  -- should not occur here
+
+    tok needParens f@(Not φ) =
+      let headTok = [TTToken TNot (Just f)]
+          argNeedsParens = isBinary φ
+          argToks = tok argNeedsParens φ
+          body = headTok ++ (if argNeedsParens then [TTToken TLParen Nothing] ++ argToks ++ [TTToken TRParen Nothing]
+                                            else argToks)
+      in if needParens && isBinary f
+            then [TTToken TLParen Nothing] ++ body ++ [TTToken TRParen Nothing]
+            else body
+
+    -- Quantifiers shouldn't occur in prop-table mode, but keep them tokenizable
+    tok _ q@(ForAll _ _) = [TTToken (TAtom (show q)) (Just q)]
+    tok _ q@(Exists _ _) = [TTToken (TAtom (show q)) (Just q)]
+
+    bin :: Bool -> Tok -> PredFormula -> PredFormula -> PredFormula -> [TTToken]
+    bin needParens opTok whole l r =
+      let left  = tok True l
+          mid   = [TTToken opTok (Just whole)]   -- value lives under connective
+          right = tok True r
+          core  = left ++ mid ++ right
+      in if needParens
+            then [TTToken TLParen Nothing] ++ core ++ [TTToken TRParen Nothing]
+            else core
+
+stripOuterParens :: [TTToken] -> [TTToken]
+stripOuterParens toks =
+  case toks of
+    (TTToken TLParen Nothing : rest)
+      | not (null rest)
+      , last rest == TTToken TRParen Nothing
+      -> init rest
+    _ -> toks

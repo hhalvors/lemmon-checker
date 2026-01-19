@@ -40,6 +40,13 @@
         <textarea id="sentence" placeholder="Example: (P → Q) ∨ R   or   (P -> Q) v R"></textarea>
 
         <div class="controls" style="margin-top:1rem">
+	   <label>
+    Output:
+    <select id="formatSelect">
+      <option value="html">View on page</option>
+      <option value="latex">LaTeX</option>
+    </select>
+  </label>
           <button id="run" type="button">Build table</button>
           <span id="spinner" class="hint" style="display:none">Working…</span>
           <span class="hint" style="margin-left:.5rem">Tip: Ctrl/⌘ + Enter</span>
@@ -179,7 +186,8 @@
       status.className = 'status';
       clear(wrap);
 
-      const sTxt = byId('sentence').value.trim();
+	const sTxt = byId('sentence').value.trim();
+	const format = document.getElementById('formatSelect').value;
       if(!sTxt){
         status.textContent = 'Please enter a sentence.';
         status.classList.add('bad');
@@ -191,16 +199,23 @@
       try{
         const res = await fetch('/prop/table', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sentenceText: sTxt })
-        });
+            headers: { 'Content-Type': 'application/json' },
+	    body: JSON.stringify({
+		sentenceText: sTxt,
+		format: format
+	    })
+	});
 
         let data;
         try { data = await res.json(); }
         catch { data = { status:'bad_json', error:'Non-JSON response from server.' }; }
 
         if(data.status === 'ok'){
-          buildTable(data.rows, data.header); // use the pretty-printed header from server
+	    if (format === "latex") {
+		wrap.innerHTML = `<pre>${data.latex || "No LaTeX returned."}</pre>`;
+	    } else {
+		buildTable(data.rows, data.header);
+	    }
           status.textContent = 'Built truth table.';
           status.classList.add('ok');
         }else{

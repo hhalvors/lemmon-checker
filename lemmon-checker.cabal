@@ -4,6 +4,7 @@ version:             0.1.0.0
 build-type:          Simple
 
 library
+  hs-source-dirs:      src      
   exposed-modules:
       ProofTypes
       LemmonChecker
@@ -17,7 +18,7 @@ library
       OcrLatexToPipe
       LatexPretty
       ProofToLaTeX
-  hs-source-dirs:      src
+      TruthTable.LaTeX 
   build-depends:
       base >=4.7 && <5
     , aeson

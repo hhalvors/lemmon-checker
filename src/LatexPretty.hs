@@ -5,6 +5,7 @@ module LatexPretty
   , ppFormulaLaTeX'
   , LaTeXStyle(..)
   , defaultStyle
+  , isBinary
   ) where
 
 import           Data.List (intercalate)

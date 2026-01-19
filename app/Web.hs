@@ -11,7 +11,8 @@ import           PrettyPrint                     (renderFormula)
 import           FormulaParser                   (parseFormula)
 import           ModelSemantics                  (Model, evalClosed)
 import           Normalize                       (normalizeSyntax)
-import           TruthTable                      (truthTable)
+import           TruthTable                      (truthTable, buildTruthTableData)
+import           TruthTable.LaTeX   (renderTruthTableLaTeX)
 import           PropDNF                         (toDNF)
 import OcrLatexToPipe (latexTableToPipe)
 import qualified OcrLatexToPipe as OCR
@@ -239,16 +240,24 @@ main = do
             ]
 
         Right (A.Object o) -> do
-          -- pull "sentenceText" out of the JSON object
-          case AT.parseEither (\obj -> obj A..: "sentenceText") o of
+          case AT.parseEither
+                 (\obj -> (,) <$> (obj A..: "sentenceText")
+                             <*> (obj A..:? "format"))
+                 o of
             Left e -> do
               status status400
               json $ object
                 [ "status" .= ("bad_json" :: String)
                 , "error"  .= e
                 ]
-            Right sTxt -> do
-              let sNorm = normalizeSyntax sTxt
+
+            Right (sTxt , mFmt) -> do
+              let fmt  = maybe ("html" :: String) id mFmt
+                  sNorm = normalizeSyntax sTxt
+
+              -- TEMP DEBUG (optional but very useful)
+              liftIO $ putStrLn ("/prop/table format=" ++ fmt ++ " sentenceText=" ++ take 80 sTxt)
+
               case parseFormula sNorm of
                 Left perr -> do
                   status status400
@@ -256,6 +265,7 @@ main = do
                     [ "status" .= ("parse_error" :: String)
                     , "error"  .= perr
                     ]
+
                 Right phi ->
                   case truthTable phi of
                     Left err -> do
@@ -264,24 +274,42 @@ main = do
                         [ "status" .= ("non_propositional" :: String)
                         , "error"  .= err
                         ]
+
                     Right rows -> do
                       let phiStr = renderFormula phi
                           enc (valMap, b) = object
                             [ "valuation" .= M.fromList (M.toList valMap)
                             , "value"     .= b
                             ]
-                      json $ object
-                        [ "status" .= ("ok" :: String)
-                        , "header" .= phiStr
-                        , "rows"   .= map enc rows
-                        ]
+
+                      case fmt of
+                        "latex" -> do
+                          let latex = 
+                                case buildTruthTableData phi of
+                                  Left _   -> Nothing
+                                  Right tt -> Just (renderTruthTableLaTeX tt)
+                          json $ object
+                            [ "status" .= ("ok" :: String)
+                            , "format" .= ("latex" :: String)
+                            , "header" .= phiStr
+                            , "latex"  .= latex
+                            ]
+
+                        _ -> do
+                          json $ object
+                            [ "status" .= ("ok" :: String)
+                            , "format" .= ("html" :: String)
+                            , "header" .= phiStr
+                            , "rows"   .= map enc rows
+                            ]
 
         Right _ -> do
           status status400
           json $ object
             [ "status" .= ("bad_json" :: String)
             , "error"  .= ("Expected JSON object with key \"sentenceText\"" :: String)
-            ]                    
+            ]                
+
 
       -- DNF page
     get "/prop/dnf" $ file "static/prop-dnf.html"
