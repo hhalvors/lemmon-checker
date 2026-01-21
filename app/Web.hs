@@ -26,6 +26,15 @@ import           Network.Wai.Middleware.Static   (staticPolicy, addBase)
 import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
 import Network.HTTP.Types.Status (status200, status400, status401, status413, status500)
 import           Network.HTTP.Simple         -- from http-conduit
+import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
+import TruthTable.Html (truthTableHtml, truthTableHtmlMainOnly)
+import TruthTable.Text (renderTruthTableText)
+import TruthTable
+  ( truthTable
+  , buildTruthTableData
+  , TruthTableData(..)
+  , TTToken(..)
+  )
 
 -- Utils & JSON
 import Control.Monad.IO.Class (liftIO)
@@ -241,8 +250,9 @@ main = do
 
         Right (A.Object o) -> do
           case AT.parseEither
-                 (\obj -> (,) <$> (obj A..: "sentenceText")
-                             <*> (obj A..:? "format"))
+                 (\obj -> (,)
+                   <$> (obj A..:  "sentenceText")
+                   <*> (obj A..: "mode"))
                  o of
             Left e -> do
               status status400
@@ -251,12 +261,11 @@ main = do
                 , "error"  .= e
                 ]
 
-            Right (sTxt , mFmt) -> do
-              let fmt  = maybe ("html" :: String) id mFmt
-                  sNorm = normalizeSyntax sTxt
+            Right (sTxt, mode) -> do
+              let sNorm = normalizeSyntax sTxt    
 
               -- TEMP DEBUG (optional but very useful)
-              liftIO $ putStrLn ("/prop/table format=" ++ fmt ++ " sentenceText=" ++ take 80 sTxt)
+              liftIO $ putStrLn ("/prop/table mode" ++ mode ++ " sentenceText=" ++ take 80 sTxt)
 
               case parseFormula sNorm of
                 Left perr -> do
@@ -282,27 +291,103 @@ main = do
                             , "value"     .= b
                             ]
 
-                      case fmt of
+                      case mode of
                         "latex" -> do
-                          let latex = 
-                                case buildTruthTableData phi of
-                                  Left _   -> Nothing
-                                  Right tt -> Just (renderTruthTableLaTeX tt)
-                          json $ object
-                            [ "status" .= ("ok" :: String)
-                            , "format" .= ("latex" :: String)
-                            , "header" .= phiStr
-                            , "latex"  .= latex
-                            ]
+                          case buildTruthTableData phi of
+                            Left err -> do
+                              status status400
+                              json $ object
+                                [ "status" .= ("non_propositional" :: String)
+                                , "error"  .= err
+                                ]
+                            Right tt -> do
+                              let latex = renderTruthTableLaTeX tt
+                              json $ object
+                                [ "status" .= ("ok" :: String)
+                                , "format" .= ("latex" :: String)
+                                , "header" .= phiStr
+                                , "latex"  .= latex
+                                ]
+
+                        "full" -> do
+                          case buildTruthTableData phi of
+                            Left err -> do
+                              status status400
+                              json $ object
+                                [ "status" .= ("non_propositional" :: String)
+                                , "error"  .= err
+                                ]
+                            Right tt -> do
+                              liftIO $ putStrLn $ "nTokens=" ++ show (length (ttTokens tt))
+                              liftIO $ putStrLn $ "tokens=" ++ show (map tokSym (ttTokens tt))
+                              liftIO $ putStrLn $ "mainIx=" ++ show (ttMainIx tt)
+                              let htmlBS   = renderHtml (truthTableHtml tt)   -- :: BL.ByteString (lazy)
+                              let htmlText = TLE.decodeUtf8 htmlBS            -- :: TL.Text
+                              json $ object
+                                [ "status" .= ("ok" :: String)
+                                , "format" .= ("html" :: String)
+                                , "mode"   .= ("full" :: String)
+                                , "header" .= phiStr
+                                , "html"   .= htmlText
+                                ]
+
+                        "main" -> do
+                          case buildTruthTableData phi of
+                            Left err -> do
+                              status status400
+                              json $ object
+                                [ "status" .= ("non_propositional" :: String)
+                                , "error"  .= err
+                                ]
+                            Right tt -> do
+                              let htmlTable = TLE.decodeUtf8 (renderHtml (truthTableHtmlMainOnly tt))
+                              json $ object
+                                [ "status" .= ("ok" :: String)
+                                , "format" .= ("html" :: String)
+                                , "mode"   .= ("main" :: String)
+                                , "header" .= phiStr
+                                , "html"   .= htmlTable
+                                ]
+
+                        "text" -> do
+                          -- backend-produced plain text table
+                          case buildTruthTableData phi of
+                            Left err -> do
+                              status status400
+                              json $ object
+                                [ "status" .= ("non_propositional" :: String)
+                                , "error"  .= err
+                                ]
+                            Right tt -> do
+                              let txt = renderTruthTableText tt
+                              json $ object
+                                [ "status" .= ("ok" :: String)
+                                , "format" .= ("text" :: String)
+                                , "mode"   .= ("text" :: String)
+                                , "header" .= phiStr
+                                , "text"   .= txt
+                                ]
 
                         _ -> do
-                          json $ object
-                            [ "status" .= ("ok" :: String)
-                            , "format" .= ("html" :: String)
-                            , "header" .= phiStr
-                            , "rows"   .= map enc rows
-                            ]
-
+                          -- default: behave like "full" (or keep your old rows API if you prefer)
+                          case buildTruthTableData phi of
+                            Left err -> do
+                              status status400
+                              json $ object
+                                [ "status" .= ("non_propositional" :: String)
+                                , "error"  .= err
+                                ]
+                            Right tt -> do
+                              -- htmlTable :: TL.Text
+                              let htmlTable = TLE.decodeUtf8 (renderHtml (truthTableHtmlMainOnly tt))
+                              json $ object
+                                [ "status" .= ("ok" :: String)
+                                , "format" .= ("html" :: String)
+                                , "mode"   .= ("full" :: String)
+                                , "header" .= phiStr
+                                , "html"   .= htmlTable
+                                ]
+                        
         Right _ -> do
           status status400
           json $ object

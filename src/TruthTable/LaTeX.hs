@@ -52,7 +52,7 @@ headerRow tt =
 
 dataRow :: TruthTableData -> TTRow -> String
 dataRow tt r =
-  let props = map (\p -> "$" ++ tf (lookupProp p) ++ "$") (ttProps tt)
+  let props = map (\p -> tf (lookupProp p)) (ttProps tt)
       toks  = zipWith tokCell (ttTokens tt) (rowTokVals r)
   in join (props ++ toks)
   where
@@ -78,18 +78,18 @@ tokHeader (TTToken TOr   _)         = "\\vee"
 tokHeader (TTToken TImpl _)         = "\\to"
 tokHeader (TTToken TIff  _)         = "\\leftrightarrow"
 tokHeader (TTToken (TAtom p) _)     = escapeMath p
-tokHeader (TTToken (TConst True) _) = "\\top"
-tokHeader (TTToken (TConst False) _) = "\\bot"
+tokHeader (TTToken (TConst True) _) = "T"
+tokHeader (TTToken (TConst False) _) = "F"
 
 tokCell :: TTToken -> Maybe Bool -> String
 tokCell (TTToken TLParen Nothing) _ = "$\\,$"   -- blank
 tokCell (TTToken TRParen Nothing) _ = "$\\,$"   -- blank
 tokCell _ Nothing                   = "$\\,$"   -- blank (safety)
-tokCell _ (Just b)                  = "$" ++ tf b ++ "$"
+tokCell _ (Just b)                  = tf b
 
 tf :: Bool -> String
-tf True  = "\\top"
-tf False = "\\bot"
+tf True  = "T"
+tf False = "F"
 
 join :: [String] -> String
 join = intercalate " & "

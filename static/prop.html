@@ -2,28 +2,84 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Truth Table Generator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Truth Tables</title>
+
   <link rel="stylesheet" href="style.css" />
+
   <style>
-  table {
-    border-collapse: collapse;
-    margin-top: 1em;
+  textarea#sentence{
+    width: 100%;
+    min-height: 120px;
+    font-size: 1.05rem;
+    line-height: 1.35;
+    padding: .75rem;
+    box-sizing: border-box;
+    resize: vertical;
   }
-  th, td {
-    padding: 6px 12px;
-    border: 1px solid #ccc;
-    text-align: center;
+
+  /* --- controls row --- */
+  .tt-controls{
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .75rem 1rem;
+    margin-top: .75rem;
   }
-  th.formula-col, td.formula-col {
-    border-left: 3px solid #000; /* thicker divider before formula column */
-    text-align: center;          /* center the truth values */
-    font-weight: bold;
+
+  /* --- minimalist radio options (native circles) --- */
+  .option-row{
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1.2rem;
+  }
+
+  .option-label{
+    font-weight: 600;
+    margin-right: .5rem;
+    white-space: nowrap;
+  }
+
+  /* Each label wraps the input + text */
+  .opt-radio{
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .95rem;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .opt-radio input[type="radio"]{
+    margin: 0;
+    transform: scale(0.95);
+  }
+
+  .tt-controls .tip{
+    white-space: nowrap;
+  }
+
+  #output{
+    margin-top: 1rem;
+  }
+
+  pre.tt-pre{
+    margin-top: 1rem;
+    padding: .75rem;
+    border: 1px solid #ddd;
+    background: #fafafa;
+    overflow: auto;
+    max-height: 60vh;
+    white-space: pre;
   }
 </style>
+
 </head>
+
 <body>
   <header>
-    <h1>Truth Table Generator</h1>
+    <h1>Truth Tables</h1>
   </header>
 
   <nav>
@@ -37,214 +93,182 @@
   <main>
     <div class="row">
       <div class="card">
-        <textarea id="sentence" placeholder="Example: (P → Q) ∨ R   or   (P -> Q) v R"></textarea>
 
-        <div class="controls" style="margin-top:1rem">
-	   <label>
-    Output:
-    <select id="formatSelect">
-      <option value="html">View on page</option>
-      <option value="latex">LaTeX</option>
-    </select>
+        <textarea
+          id="sentence"
+          placeholder="Example: (P & Q) v R   or   (P -> Q) v R"
+          autocomplete="off"
+          spellcheck="false"
+        ></textarea>
+
+        <div class="tt-controls">
+	  <div class="option-row">
+  <span class="option-label">Table Style:</span>
+
+  <label class="opt-radio">
+    <input type="radio" name="mode" value="full" checked>
+    Full Table
   </label>
-          <button id="run" type="button">Build table</button>
+
+  <label class="opt-radio">
+    <input type="radio" name="mode" value="main">
+    Main Connective
+  </label>
+
+  <label class="opt-radio">
+    <input type="radio" name="mode" value="text">
+    Text Table
+  </label>
+
+  <label class="opt-radio">
+    <input type="radio" name="mode" value="latex">
+    LaTeX Table
+  </label>
+</div>
+
           <span id="spinner" class="hint" style="display:none">Working…</span>
-          <span class="hint" style="margin-left:.5rem">Tip: Ctrl/⌘ + Enter</span>
+          <span class="tip">Tip: Ctrl/⌘ + Enter</span>
+
+          <button id="run" type="button">Build table</button>
         </div>
 
-        <div id="status" class="status" style="margin-top:.5rem"></div>
-        <div id="table-wrap" style="margin-top:1rem"></div>
+        <div id="status" class="status" style="margin-top:.75rem"></div>
+        <div id="output"></div>
+
       </div>
     </div>
   </main>
 
   <footer>
-  &copy; 2025 Symbolic Logic Tools |
-  <!-- These hrefs are just fallbacks; JS will overwrite them -->
-  <a id="bugLink" href="https://github.com/hhalvors/lemmon-checker/issues/new?labels=bug">Report a Bug</a> |
-  <a id="feedbackLink" href="https://github.com/hhalvors/lemmon-checker/discussions">Feedback / Questions</a>
-</footer>
+    &copy; 2025 Symbolic Logic Tools |
+    <a id="bugLink" href="https://github.com/hhalvors/lemmon-checker/issues/new?labels=bug">Report a Bug</a> |
+    <a id="feedbackLink" href="https://github.com/hhalvors/lemmon-checker/discussions">Feedback / Questions</a>
+  </footer>
+
 
 <script>
-  (function () {
-    const REPO_OWNER = 'hhalvors';
-    const REPO_NAME  = 'lemmon-checker';
+  const byId = (id) => document.getElementById(id);
+  const outEl = () => byId('output');
 
-    const enc  = encodeURIComponent;
-    const page = document.title || 'Unknown page';
-    const url  = window.location.href;
-    const ua   = navigator.userAgent;
-
-    // --- Prefilled BUG link (Issues) ---
-    const bugTitle = `Bug: ${page}`;
-    const bugBody =
-`**Page:** ${page}
-**URL:** ${url}
-
-**Steps to reproduce**
-1. …
-2. …
-
-**Expected**
-…
-
-**Actual**
-…
-
-**Console errors** (open DevTools → Console)
-\`\`\`
-<copy/paste any errors here>
-\`\`\`
-
-**Browser/OS:** ${ua}
-`;
-    const bugUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/issues/new` +
-                   `?labels=bug&title=${enc(bugTitle)}&body=${enc(bugBody)}`;
-    const bugA = document.getElementById('bugLink');
-    if (bugA) bugA.href = bugUrl;
-
-    // --- Prefilled FEEDBACK/QUESTION link (Discussions) ---
-    const qTitle = `Question/Feedback: ${page}`;
-    const qBody =
-`**Page:** ${page}
-**URL:** ${url}
-
-**Your question/feedback**
-- 
-`;
-    const discussUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/discussions/new` +
-                       `?category=general&title=${enc(qTitle)}&body=${enc(qBody)}`;
-    const qA = document.getElementById('feedbackLink');
-    if (qA) qA.href = discussUrl;
-  })();
-</script>
-
-  <script>
-    const byId = id => document.getElementById(id);
-    const tf = b => (b ? "T" : "F");
-    function clear(node){ while(node.firstChild) node.removeChild(node.firstChild); }
-
-    /** Render the truth table.
-     * rows: [{ valuation: {P:Bool,...}, value: Bool }, ...]
-     * header: pretty-printed formula string from the server
-     */
-    function buildTable(rows, header){
-  const wrap = byId('table-wrap');
-  clear(wrap);
-  if(!rows || !rows.length){
-    wrap.innerHTML = '<div class="hint">No rows to display.</div>';
-    return;
+  function clear(node){
+    while (node.firstChild) node.removeChild(node.firstChild);
   }
 
-  const first = rows[0];
-  const valuation = first.valuation || {};
-  const propNames = Object.keys(valuation).sort();
-  const formulaKey = Object.keys(first).find(k => k !== "valuation") || "value";
-
-  const table = document.createElement('table');
-  const thead = document.createElement('thead');
-  const tbody = document.createElement('tbody');
-
-  const trh = document.createElement('tr');
-  for (const p of propNames){
-    const th = document.createElement('th');
-    th.textContent = p;
-    trh.appendChild(th);
+  function setStatusOk(msg){
+    const s = byId('status');
+    s.textContent = msg;
+    s.className = 'status ok';
   }
-  const thF = document.createElement('th');
-  thF.textContent = header || formulaKey || "Value";
-  thF.classList.add("formula-col");  // <--- add class here
-  trh.appendChild(thF);
-  thead.appendChild(trh);
 
-  for (const row of rows){
-    const tr = document.createElement('tr');
-    for (const p of propNames){
-      const td = document.createElement('td');
-      td.textContent = tf(!!row.valuation[p]);
-      tr.appendChild(td);
+  function setStatusBad(msg){
+    const s = byId('status');
+    s.innerHTML = `<span class="bad">${msg}</span>`;
+    s.className = 'status bad';
+  }
+
+  function getMode(){
+    const el = document.querySelector('input[name="mode"]:checked');
+    return el ? el.value : 'full'; // full | main | text | latex
+  }
+
+  function renderOutput(data){
+    const out = outEl();
+    clear(out);
+
+    if (data.format === 'html' && typeof data.html === 'string') {
+      out.innerHTML = data.html;
+      return;
     }
-    const tdV = document.createElement('td');
-    tdV.textContent = tf(!!row[formulaKey]);
-    tdV.classList.add("formula-col"); // <--- add class here
-    tr.appendChild(tdV);
-    tbody.appendChild(tr);
+
+    if (data.format === 'text' && typeof data.text === 'string') {
+      const pre = document.createElement('pre');
+      pre.className = 'tt-pre';
+      pre.textContent = data.text;
+      out.appendChild(pre);
+      return;
+    }
+
+    if (data.format === 'latex' && typeof data.latex === 'string') {
+      const pre = document.createElement('pre');
+      pre.className = 'tt-pre';
+      pre.textContent = data.latex;
+      out.appendChild(pre);
+      return;
+    }
+
+    // fallback debug
+    const pre = document.createElement('pre');
+    pre.className = 'tt-pre';
+    pre.textContent = JSON.stringify(data, null, 2);
+    out.appendChild(pre);
   }
 
-  table.appendChild(thead);
-  table.appendChild(tbody);
-  wrap.appendChild(table);
-}
+  async function run(){
+    const btn = byId('run');
+    const spinner = byId('spinner');
 
-    async function run(){
-      const btn = byId('run');
-      const spinner = byId('spinner');
-      const status = byId('status');
-      const wrap = byId('table-wrap');
+    const sTxt = byId('sentence').value.trim();
+    const mode = getMode(); // the ONE knob
 
-      status.textContent = '';
-      status.className = 'status';
-      clear(wrap);
+    // reset UI
+    byId('status').textContent = '';
+    byId('status').className = 'status';
+    clear(outEl());
 
-	const sTxt = byId('sentence').value.trim();
-	const format = document.getElementById('formatSelect').value;
-      if(!sTxt){
-        status.textContent = 'Please enter a sentence.';
-        status.classList.add('bad');
+    if(!sTxt){
+      setStatusBad('Please enter a sentence.');
+      return;
+    }
+
+    btn.disabled = true;
+    spinner.style.display = 'inline';
+
+    try{
+      const payload = { sentenceText: sTxt, mode };
+
+      const res = await fetch('/prop/table', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      let data;
+      try { data = await res.json(); }
+      catch { data = { status:'bad_json', error:'Non-JSON response from server.' }; }
+
+      if(data.status !== 'ok'){
+        setStatusBad(`${data.status}: ${data.error || 'Unknown error'}`);
         return;
       }
 
-      btn.disabled = true; spinner.style.display = 'inline';
-
-      try{
-        const res = await fetch('/prop/table', {
-          method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-	    body: JSON.stringify({
-		sentenceText: sTxt,
-		format: format
-	    })
-	});
-
-        let data;
-        try { data = await res.json(); }
-        catch { data = { status:'bad_json', error:'Non-JSON response from server.' }; }
-
-        if(data.status === 'ok'){
-	    if (format === "latex") {
-		wrap.innerHTML = `<pre>${data.latex || "No LaTeX returned."}</pre>`;
-	    } else {
-		buildTable(data.rows, data.header);
-	    }
-          status.textContent = 'Built truth table.';
-          status.classList.add('ok');
-        }else{
-          const msg = data.error || 'Unknown error';
-          status.innerHTML = `<span class="bad">${data.status}: ${msg}</span>`;
-        }
-      }catch(e){
-        status.innerHTML = `<span class="bad">${String(e)}</span>`;
-      }finally{
-        btn.disabled = false; spinner.style.display = 'none';
-      }
+      renderOutput(data);
+      setStatusOk('Built truth table.');
+    } catch(e){
+      setStatusBad(String(e));
+    } finally {
+      btn.disabled = false;
+      spinner.style.display = 'none';
     }
+  }
 
-    // Wire events after DOM is ready
-    document.addEventListener('DOMContentLoaded', () => {
-      const btn = byId('run');
-      if(btn){
-        btn.addEventListener('click', (e) => { e.preventDefault(); run(); });
-      }
-      // Ctrl/⌘ + Enter shortcut
-      const sentence = byId('sentence');
-      sentence.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter'){
-          e.preventDefault();
-          run();
-        }
-      });
+  document.addEventListener('DOMContentLoaded', () => {
+    byId('run').addEventListener('click', (e) => {
+      e.preventDefault();
+      run();
     });
-  </script>
+
+    byId('sentence').addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter'){
+        e.preventDefault();
+        run();
+      }
+    });
+
+    // Optional: re-run immediately when user switches mode (comment out if you dislike)
+    // document.querySelectorAll('input[name="mode"]').forEach((r) => {
+    //   r.addEventListener('change', () => run());
+    // });
+  });
+</script>  
 </body>
 </html>
-

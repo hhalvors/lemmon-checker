@@ -172,9 +172,10 @@ data TTRow = TTRow
   } deriving (Eq, Show)
 
 data TruthTableData = TruthTableData
-  { ttProps  :: [String]   -- valuation columns, sorted
-  , ttTokens :: [TTToken]  -- formula token columns
-  , ttRows   :: [TTRow]
+  { ttProps   :: [String]   -- valuation columns, sorted
+  , ttTokens  :: [TTToken]  -- formula token columns
+  , ttMainIx  :: Int        -- index of main connective token column
+  , ttRows    :: [TTRow]
   } deriving (Eq, Show)
 
 -- Build the entire token/value matrix.
@@ -188,9 +189,12 @@ buildTruthTableData φ =
           let props  = L.sort (S.toList (propsIn φ))
               vals   = allAssignments props
               toks   = tokensTop φ
+              mainIx = case L.findIndex (\tt -> tokForm tt == Just φ) toks of
+                         Just i  -> i
+                         Nothing -> 0  -- should not happen; safe fallback
           in do
             rows <- traverse (mkRow toks) vals
-            pure $ TruthTableData props toks rows
+            pure $ TruthTableData props toks mainIx rows
   where
     mkRow :: [TTToken] -> Map String Bool -> Either String TTRow
     mkRow toks valMap = do
@@ -252,5 +256,21 @@ stripOuterParens toks =
     (TTToken TLParen Nothing : rest)
       | not (null rest)
       , last rest == TTToken TRParen Nothing
+      , firstParenClosesAtEnd toks
       -> init rest
     _ -> toks
+
+-- True iff the paren opened at the very first token closes at the very last token.
+firstParenClosesAtEnd :: [TTToken] -> Bool
+firstParenClosesAtEnd xs = go 0 xs
+  where
+    go :: Int -> [TTToken] -> Bool
+    go _ [] = False
+    go k [TTToken TRParen Nothing]
+      = k == 1
+    go k (TTToken TLParen Nothing : ys) = go (k+1) ys
+    go k (TTToken TRParen Nothing : ys)
+      | k == 1    = False   -- closed *before* the end → not outermost
+      | otherwise = go (k-1) ys
+    go k (_ : ys) = go k ys                 
+

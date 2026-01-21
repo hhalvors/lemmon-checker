@@ -18,9 +18,12 @@ library
       OcrLatexToPipe
       LatexPretty
       ProofToLaTeX
-      TruthTable.LaTeX 
+      TruthTable.LaTeX
+      TruthTable.Html
+      TruthTable.Text
   build-depends:
       base >=4.7 && <5
+    , blaze-html
     , aeson
     , text
     , containers
@@ -89,6 +92,8 @@ executable web
     , http-client-tls
     , unordered-containers
     , vector
+    , blaze-html
+    , blaze-markup
   default-language:    Haskell2010
 
 executable model-test
