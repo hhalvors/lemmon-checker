@@ -7,74 +7,101 @@
 
   <link rel="stylesheet" href="style.css" />
 
-  <style>
-  textarea#sentence{
-    width: 100%;
-    min-height: 120px;
-    font-size: 1.05rem;
-    line-height: 1.35;
-    padding: .75rem;
-    box-sizing: border-box;
-    resize: vertical;
-  }
+<style>
+/* ===============================
+   Sentence input row (new)
+   =============================== */
 
-  /* --- controls row --- */
-  .tt-controls{
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: .75rem 1rem;
-    margin-top: .75rem;
-  }
+.input-row{
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  width: 100%;
+}
 
-  /* --- minimalist radio options (native circles) --- */
-  .option-row{
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 1.2rem;
-  }
+input#sentence{
+  flex: 1;                 /* ← fill available space */
+  min-width: 0;
+  height: 2.6rem;
+  font-size: 1.05rem;
+  line-height: 1.2;
+  padding: .45rem .6rem;
+  box-sizing: border-box;
+}
 
-  .option-label{
-    font-weight: 600;
-    margin-right: .5rem;
-    white-space: nowrap;
-  }
+.input-row button{
+  white-space: nowrap;
+  padding: .55rem 1rem;
+  font-size: 1rem;
+}
 
-  /* Each label wraps the input + text */
-  .opt-radio{
-    display: inline-flex;
-    align-items: center;
-    gap: .4rem;
-    font-size: .95rem;
-    cursor: pointer;
-    user-select: none;
-  }
+/* ===============================
+   Controls row
+   =============================== */
 
-  .opt-radio input[type="radio"]{
-    margin: 0;
-    transform: scale(0.95);
-  }
+.tt-controls{
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .75rem 1rem;
+  margin-top: .75rem;
+}
 
-  .tt-controls .tip{
-    white-space: nowrap;
-  }
+/* ===============================
+   Radio options (minimalist)
+   =============================== */
 
-  #output{
-    margin-top: 1rem;
-  }
+.option-row{
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1.2rem;
+}
 
-  pre.tt-pre{
-    margin-top: 1rem;
-    padding: .75rem;
-    border: 1px solid #ddd;
-    background: #fafafa;
-    overflow: auto;
-    max-height: 60vh;
-    white-space: pre;
-  }
+.option-label{
+  font-weight: 600;
+  margin-right: .5rem;
+  white-space: nowrap;
+}
+
+.opt-radio{
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .95rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.opt-radio input[type="radio"]{
+  margin: 0;
+  transform: scale(0.95);
+}
+
+.tt-controls .tip{
+  white-space: nowrap;
+}
+
+/* ===============================
+   Output area
+   =============================== */
+
+#output{
+  margin-top: 1rem;
+}
+
+pre.tt-pre{
+  margin-top: 1rem;
+  padding: .75rem;
+  border: 1px solid #ddd;
+  background: #fafafa;
+  overflow: auto;
+  max-height: 60vh;
+  white-space: pre;
+}
 </style>
 
+  
 </head>
 
 <body>
@@ -90,55 +117,59 @@
     <a href="/instructions">Instructions</a>
   </nav>
 
-  <main>
-    <div class="row">
-      <div class="card">
+<main>
+  <div class="row">
+    <div class="card">
 
-        <textarea
+      <!-- input + button on one line -->
+      <div class="input-row">
+        <input
           id="sentence"
-          placeholder="Example: (P & Q) v R   or   (P -> Q) v R"
+          type="text"
+          placeholder="Example: (P -> Q) v R"
           autocomplete="off"
           spellcheck="false"
-        ></textarea>
+        />
+        <button id="run" type="button">build table</button>
+      </div>
 
-        <div class="tt-controls">
-	  <div class="option-row">
-  <span class="option-label">Table Style:</span>
+      <div class="tt-controls">
+        <div class="option-row">
+          <span class="option-label">Table Style:</span>
 
-  <label class="opt-radio">
-    <input type="radio" name="mode" value="full" checked>
-    Full Table
-  </label>
+          <label class="opt-radio">
+            <input type="radio" name="mode" value="full" checked>
+            Full Table
+          </label>
 
-  <label class="opt-radio">
-    <input type="radio" name="mode" value="main">
-    Main Connective
-  </label>
+          <label class="opt-radio">
+            <input type="radio" name="mode" value="main">
+            Main Connective
+          </label>
 
-  <label class="opt-radio">
-    <input type="radio" name="mode" value="text">
-    Text Table
-  </label>
+          <label class="opt-radio">
+            <input type="radio" name="mode" value="text">
+            Text Table
+          </label>
 
-  <label class="opt-radio">
-    <input type="radio" name="mode" value="latex">
-    LaTeX Table
-  </label>
-</div>
-
-          <span id="spinner" class="hint" style="display:none">Working…</span>
-          <span class="tip">Tip: Ctrl/⌘ + Enter</span>
-
-          <button id="run" type="button">Build table</button>
+          <label class="opt-radio">
+            <input type="radio" name="mode" value="latex">
+            LaTeX Table
+          </label>
         </div>
 
-        <div id="status" class="status" style="margin-top:.75rem"></div>
-        <div id="output"></div>
-
+        <span id="spinner" class="hint" style="display:none">Working…</span>
+        <span class="tip">Tip: Ctrl/⌘ + Enter</span>
       </div>
-    </div>
-  </main>
 
+      <div id="status" class="status" style="margin-top:.75rem"></div>
+      <div id="output"></div>
+
+    </div>
+  </div>
+</main>
+
+  
   <footer>
     &copy; 2025 Symbolic Logic Tools |
     <a id="bugLink" href="https://github.com/hhalvors/lemmon-checker/issues/new?labels=bug">Report a Bug</a> |
