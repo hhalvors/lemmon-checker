@@ -5,36 +5,32 @@ module TruthTable.LaTeX
   ) where
 
 import TruthTable (TruthTableData(..), TTToken(..), Tok(..), TTRow(..))
+import TruthTable.Style (TruthStyle, truthLaTeX)
 import Data.List (intercalate)
 import qualified Data.Map.Strict as M
 
-renderTruthTableLaTeX :: TruthTableData -> String
-renderTruthTableLaTeX tt =
+renderTruthTableLaTeX :: TruthStyle -> TruthTableData -> String
+renderTruthTableLaTeX st tt =
   unlines $
     [ "% NOTE: requires \\usepackage{array}"
     , "\\begin{tabular}{" ++ colSpec tt ++ "}"
-    , headerRow tt ++ " \\\\"
+    , headerRow st tt ++ " \\\\"
     , "\\hline"
     ]
-    ++ map (\r -> dataRow tt r ++ " \\\\") (ttRows tt)
+    ++ map (\r -> dataRow st tt r ++ " \\\\") (ttRows tt)
     ++ [ "\\end{tabular}" ]
 
 --------------------------------------------------------------------------------
 -- Column spec
 --------------------------------------------------------------------------------
 
--- We keep it simple and robust:
---   c c c | c c c c ...
--- and we “squeeze” parentheses with @{} on both sides.
 colSpec :: TruthTableData -> String
 colSpec tt =
   let nProps = length (ttProps tt)
       propCols = replicate nProps "c"
       tokCols  = map tokCol (ttTokens tt)
   in intercalate "" $
-       map (++ "") propCols
-       ++ ["|"]
-       ++ tokCols
+       propCols ++ ["|"] ++ tokCols
   where
     tokCol (TTToken TLParen Nothing) = "@{}c@{}"
     tokCol (TTToken TRParen Nothing) = "@{}c@{}"
@@ -44,16 +40,16 @@ colSpec tt =
 -- Rows
 --------------------------------------------------------------------------------
 
-headerRow :: TruthTableData -> String
-headerRow tt =
+headerRow :: TruthStyle -> TruthTableData -> String
+headerRow st tt =
   let props = map (\p -> "$" ++ escapeMath p ++ "$") (ttProps tt)
-      toks  = map (\t -> "$" ++ tokHeader t ++ "$") (ttTokens tt)
+      toks  = map (\t -> "$" ++ tokHeader st t ++ "$") (ttTokens tt)
   in join (props ++ toks)
 
-dataRow :: TruthTableData -> TTRow -> String
-dataRow tt r =
-  let props = map (\p -> tf (lookupProp p)) (ttProps tt)
-      toks  = zipWith tokCell (ttTokens tt) (rowTokVals r)
+dataRow :: TruthStyle -> TruthTableData -> TTRow -> String
+dataRow st tt r =
+  let props = map (\p -> "$" ++ truthLaTeX st (lookupProp p) ++ "$") (ttProps tt)
+      toks  = zipWith (tokCell st) (ttTokens tt) (rowTokVals r)
   in join (props ++ toks)
   where
     lookupProp p =
@@ -61,40 +57,33 @@ dataRow tt r =
         Just b  -> b
         Nothing -> False
 
--- Avoid importing Map stuff in this module: use a tiny local view
-toList :: (Foldable t) => t a -> [a]
-toList = foldr (:) []
-
 --------------------------------------------------------------------------------
 -- Token rendering
 --------------------------------------------------------------------------------
 
-tokHeader :: TTToken -> String
-tokHeader (TTToken TLParen Nothing) = "("
-tokHeader (TTToken TRParen Nothing) = ")"
-tokHeader (TTToken TNot  _)         = "\\neg"
-tokHeader (TTToken TAnd  _)         = "\\wedge"
-tokHeader (TTToken TOr   _)         = "\\vee"
-tokHeader (TTToken TImpl _)         = "\\to"
-tokHeader (TTToken TIff  _)         = "\\leftrightarrow"
-tokHeader (TTToken (TAtom p) _)     = escapeMath p
-tokHeader (TTToken (TConst True) _) = "T"
-tokHeader (TTToken (TConst False) _) = "F"
+tokHeader :: TruthStyle -> TTToken -> String
+tokHeader _  (TTToken TLParen Nothing) = "("
+tokHeader _  (TTToken TRParen Nothing) = ")"
+tokHeader _  (TTToken TNot  _)         = "\\neg"
+tokHeader _  (TTToken TAnd  _)         = "\\wedge"
+tokHeader _  (TTToken TOr   _)         = "\\vee"
+tokHeader _  (TTToken TImpl _)         = "\\to"
+tokHeader _  (TTToken TIff  _)         = "\\leftrightarrow"
+tokHeader _  (TTToken (TAtom p) _)     = escapeMath p
+tokHeader st (TTToken (TConst True) _)  = truthLaTeX st True
+tokHeader st (TTToken (TConst False) _) = truthLaTeX st False
 
-tokCell :: TTToken -> Maybe Bool -> String
-tokCell (TTToken TLParen Nothing) _ = "$\\,$"   -- blank
-tokCell (TTToken TRParen Nothing) _ = "$\\,$"   -- blank
-tokCell _ Nothing                   = "$\\,$"   -- blank (safety)
-tokCell _ (Just b)                  = tf b
+tokCell :: TruthStyle -> TTToken -> Maybe Bool -> String
+tokCell _  (TTToken TLParen Nothing) _ = "$\\,$"
+tokCell _  (TTToken TRParen Nothing) _ = "$\\,$"
+tokCell _  _ Nothing                   = "$\\,$"
+tokCell st _ (Just b)                  = "$" ++ truthLaTeX st b ++ "$"
 
-tf :: Bool -> String
-tf True  = "T"
-tf False = "F"
+--------------------------------------------------------------------------------
 
 join :: [String] -> String
 join = intercalate " & "
 
--- Escape token text inside math mode (very light touch)
 escapeMath :: String -> String
 escapeMath = concatMap go
   where
@@ -109,4 +98,5 @@ escapeMath = concatMap go
     go '~'  = "\\~{}"
     go '\\' = "\\textbackslash{}"
     go c    = [c]
+
 

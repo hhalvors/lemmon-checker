@@ -158,6 +158,25 @@ pre.tt-pre{
           </label>
         </div>
 
+	<div class="option-row" style="margin-top:.25rem">
+  <span class="option-label">Truth Values:</span>
+
+  <label class="opt-radio">
+    <input type="radio" name="truthStyle" value="tf" checked>
+    T / F
+  </label>
+
+  <label class="opt-radio">
+    <input type="radio" name="truthStyle" value="bits">
+    1 / 0
+  </label>
+
+  <label class="opt-radio">
+    <input type="radio" name="truthStyle" value="topbot">
+    ⊤ / ⊥
+  </label>
+</div>
+
         <span id="spinner" class="hint" style="display:none">Working…</span>
         <span class="tip">Tip: Ctrl/⌘ + Enter</span>
       </div>
@@ -202,6 +221,11 @@ pre.tt-pre{
     return el ? el.value : 'full'; // full | main | text | latex
   }
 
+  function getTruthStyle(){
+  const el = document.querySelector('input[name="truthStyle"]:checked');
+  return el ? el.value : 'tf'; // tf | bits | topbot
+}
+
   function renderOutput(data){
     const out = outEl();
     clear(out);
@@ -239,7 +263,8 @@ pre.tt-pre{
     const spinner = byId('spinner');
 
     const sTxt = byId('sentence').value.trim();
-    const mode = getMode(); // the ONE knob
+      const mode = getMode(); 
+      const truthStyle = getTruthStyle();
 
     // reset UI
     byId('status').textContent = '';
@@ -255,7 +280,7 @@ pre.tt-pre{
     spinner.style.display = 'inline';
 
     try{
-      const payload = { sentenceText: sTxt, mode };
+	const payload = { sentenceText: sTxt, mode, truthStyle };
 
       const res = await fetch('/prop/table', {
         method: 'POST',

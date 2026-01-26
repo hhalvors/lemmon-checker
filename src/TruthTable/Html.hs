@@ -6,88 +6,77 @@ module TruthTable.Html
   ) where
 
 import TruthTable (TruthTableData(..), TTToken(..), TTRow(..), Tok(..))
+import TruthTable.Style (TruthStyle, truthText)
 import qualified Data.Map.Strict as M
 import Data.Maybe (fromMaybe)
 import Text.Blaze.Html5 as H
 import Text.Blaze.Html5.Attributes as A
 
 -- display tokens in the header row
-tokHeaderText :: Tok -> String
-tokHeaderText TLParen      = "("
-tokHeaderText TRParen      = ")"
-tokHeaderText TNot         = "¬"
-tokHeaderText TAnd         = "∧"
-tokHeaderText TOr          = "∨"
-tokHeaderText TImpl        = "→"
-tokHeaderText TIff         = "↔"
-tokHeaderText (TAtom p)    = p
-tokHeaderText (TConst True)  = "⊤"
-tokHeaderText (TConst False) = "⊥"
+tokHeaderText :: TruthStyle -> Tok -> String
+tokHeaderText _  TLParen        = "("
+tokHeaderText _  TRParen        = ")"
+tokHeaderText _  TNot           = "¬"
+tokHeaderText _  TAnd           = "∧"
+tokHeaderText _  TOr            = "∨"
+tokHeaderText _  TImpl          = "→"
+tokHeaderText _  TIff           = "↔"
+tokHeaderText _  (TAtom p)      = p
+tokHeaderText st (TConst True)  = truthText st True
+tokHeaderText st (TConst False) = truthText st False
 
-tf :: Bool -> String
-tf True  = "T"
-tf False = "F"
+-- blank for parens, otherwise chosen truth glyphs
+tokValCellText :: TruthStyle -> TTToken -> Maybe Bool -> String
+tokValCellText _  (TTToken TLParen Nothing) _ = ""
+tokValCellText _  (TTToken TRParen Nothing) _ = ""
+tokValCellText _  _ Nothing                   = ""
+tokValCellText st _ (Just b)                  = truthText st b
 
--- blank for parens, otherwise T/F
-tokValCellText :: TTToken -> Maybe Bool -> String
-tokValCellText (TTToken TLParen Nothing) _ = ""
-tokValCellText (TTToken TRParen Nothing) _ = ""
-tokValCellText _ Nothing                   = ""
-tokValCellText _ (Just b)                  = tf b
-
--- Full token table (props + all token columns)
-truthTableHtml :: TruthTableData -> Html
-truthTableHtml tt =
+truthTableHtml :: TruthStyle -> TruthTableData -> Html
+truthTableHtml st tt =
   H.table ! A.class_ "tt" $ do
     thead $ tr $ do
-      -- proposition headers
       mapM_ (\p -> th (toHtml p)) (ttProps tt)
-
-      -- token headers (thick divider on first token col)
       let toks = ttTokens tt
-      mapM_ (uncurry (tokTh (ttMainIx tt))) (zip [0..] toks)
+      mapM_ (uncurry (tokTh st (ttMainIx tt))) (zip [0..] toks)
 
-    tbody $ mapM_ (rowTr tt (Just [0 .. length (ttTokens tt) - 1])) (ttRows tt)
+    tbody $ mapM_ (rowTr st tt (Just [0 .. length (ttTokens tt) - 1])) (ttRows tt)
 
--- Main connective only (props + that one token column)
-truthTableHtmlMainOnly :: TruthTableData -> Html
-truthTableHtmlMainOnly tt =
+truthTableHtmlMainOnly :: TruthStyle -> TruthTableData -> Html
+truthTableHtmlMainOnly st tt =
   H.table ! A.class_ "tt" $ do
     thead $ tr $ do
       mapM_ (\p -> th (toHtml p)) (ttProps tt)
-      tokTh (ttMainIx tt) (ttMainIx tt) (ttTokens tt !! ttMainIx tt)
+      tokTh st (ttMainIx tt) (ttMainIx tt) (ttTokens tt !! ttMainIx tt)
 
-    tbody $ mapM_ (rowTr tt (Just [ttMainIx tt])) (ttRows tt)
+    tbody $ mapM_ (rowTr st tt (Just [ttMainIx tt])) (ttRows tt)
 
-tokTh :: Int -> Int -> TTToken -> Html
-tokTh mainIx i (TTToken sym _) =
+tokTh :: TruthStyle -> Int -> Int -> TTToken -> Html
+tokTh st mainIx i (TTToken sym _) =
   let cls0 = "tok tokhead"
       cls1 = if i == 0      then cls0 ++ " divider-left" else cls0
       cls2 = if i == mainIx then cls1 ++ " maincol"      else cls1
-  in th ! A.class_ (toValue cls2) $ toHtml (tokHeaderText sym)    
+  in th ! A.class_ (toValue cls2) $ toHtml (tokHeaderText st sym)
 
-rowTr :: TruthTableData -> Maybe [Int] -> TTRow -> Html
-rowTr tt mCols r =
+rowTr :: TruthStyle -> TruthTableData -> Maybe [Int] -> TTRow -> Html
+rowTr st tt mCols r =
   tr $ do
-    -- left valuation columns: plain T/F (NOT math)
-    mapM_ (propTd r) (ttProps tt)
-
+    mapM_ (propTd st r) (ttProps tt)
     let cols = fromMaybe [0..length (ttTokens tt)-1] mCols
-    mapM_ (tokTd tt r) cols
+    mapM_ (tokTd st tt r) cols
 
-propTd :: TTRow -> String -> Html
-propTd r p =
+propTd :: TruthStyle -> TTRow -> String -> Html
+propTd st r p =
   let b = fromMaybe False (M.lookup p (rowValuation r))
-  in td ! A.class_ "valTF" $ toHtml (tf b)
+  in td ! A.class_ "valTF" $ toHtml (truthText st b)
 
-tokTd :: TruthTableData -> TTRow -> Int -> Html
-tokTd tt r i =
+tokTd :: TruthStyle -> TruthTableData -> TTRow -> Int -> Html
+tokTd st tt r i =
   let t  = ttTokens tt !! i
       mv = rowTokVals r !! i
-
       cls0 = "tok"
       cls1 = if i == 0           then cls0 ++ " divider-left" else cls0
       cls2 = if i == ttMainIx tt then cls1 ++ " maincol"      else cls1
   in td ! A.class_ (toValue cls2) $
-       toHtml (tokValCellText t mv)  
+       toHtml (tokValCellText st t mv)
 

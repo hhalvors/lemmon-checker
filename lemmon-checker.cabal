@@ -21,6 +21,7 @@ library
       TruthTable.LaTeX
       TruthTable.Html
       TruthTable.Text
+      TruthTable.Style
   build-depends:
       base >=4.7 && <5
     , blaze-html
