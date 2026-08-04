@@ -24,7 +24,7 @@ import           Web.Scotty
 import           Network.Wai                     (Request(..), RequestBodyLength(..))
 import           Network.Wai.Middleware.Static   (staticPolicy, addBase)
 import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
-import Network.HTTP.Types.Status (status200, status400, status401, status413, status500, status502)
+import Network.HTTP.Types.Status (status200, status400, status401, status413, status429, status500, status502)
 import           Network.HTTP.Simple         -- from http-conduit
 import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 import TruthTable.Html (truthTableHtml, truthTableHtmlMainOnly)
@@ -37,6 +37,8 @@ import TruthTable
   )
 
 -- Utils & JSON
+import Control.Concurrent.MVar             (MVar, newMVar, modifyMVar)
+import Data.Time.Clock                     (UTCTime, getCurrentTime, diffUTCTime)
 import Control.Monad.IO.Class (liftIO)
 import Control.Applicative ((<|>))
 import           System.Environment              (lookupEnv)
@@ -73,6 +75,96 @@ maxProofLines = 400
 -- harness read photographs with one prompt rather than two that drift apart.
 promptFile :: FilePath
 promptFile = "prompts/transcribe.txt"
+
+--------------------------------------------------------------------------------
+-- Limits on the transcription route
+--------------------------------------------------------------------------------
+--
+-- /transcribe is the only route that spends money: each call goes to a paid
+-- API on our key. Everything else here is pure computation and needs no such
+-- guard.
+--
+-- Three limits, because they fail in different ways.
+--
+--   * A size cap, so a single request cannot carry an enormous payload. The
+--     browser downscales to 1568px, which is a few hundred kilobytes; anything
+--     far larger did not come from our own page.
+--
+--   * A per-address hourly cap. This catches ordinary accidents — a stuck
+--     retry loop, an impatient student reloading — and nothing more, since an
+--     attacker can change address at will.
+--
+--   * A global daily cap. This is the only limit that bounds the bill against
+--     someone who rotates addresses, and it is deliberately blunt. It can deny
+--     service to real students, which is the trade being made: an exhausted
+--     daily quota is recoverable by waiting, an exhausted account is not.
+
+maxImageBytes :: Int
+maxImageBytes = 8 * 1024 * 1024        -- generous next to a 1568px JPEG
+
+perAddressPerHour :: Int
+perAddressPerHour = 40                 -- a full problem set, comfortably
+
+globalPerDay :: Int
+globalPerDay = 500                     -- a class of thirty, several attempts each
+
+data LimitState = LimitState
+  { lsRecent :: M.Map String [UTCTime]  -- ^ recent calls, by client address
+  , lsCount  :: Int                     -- ^ calls in the current day
+  , lsStart  :: UTCTime                 -- ^ when the current day began
+  }
+
+newtype Limits = Limits (MVar LimitState)
+
+newLimits :: IO Limits
+newLimits = do
+  now <- getCurrentTime
+  Limits <$> newMVar (LimitState M.empty 0 now)
+
+-- | Record a call and say whether it is allowed. Nothing means go ahead;
+-- Just holds the message to show the caller.
+--
+-- The whole decision happens under one MVar so that concurrent requests cannot
+-- both read a count below the limit and then both proceed.
+admit :: Limits -> String -> IO (Maybe String)
+admit (Limits var) addr = do
+  now <- getCurrentTime
+  modifyMVar var $ \st -> do
+    -- Roll the daily window over if a day has passed.
+    let (count, start)
+          | diffUTCTime now (lsStart st) > 86400 = (0, now)
+          | otherwise                            = (lsCount st, lsStart st)
+
+        -- Drop calls older than an hour, for this address and for everyone,
+        -- so the map cannot grow without bound.
+        fresh ts  = [ t | t <- ts, diffUTCTime now t < 3600 ]
+        pruned    = M.filter (not . null) (M.map fresh (lsRecent st))
+        mine      = M.findWithDefault [] addr pruned
+
+    if count >= globalPerDay
+      then pure ( st { lsRecent = pruned, lsCount = count, lsStart = start }
+                , Just "This service has reached its daily limit for reading \
+                       \photographs. Please try again tomorrow, or type your \
+                       \proof into the proof checker directly." )
+      else if length mine >= perAddressPerHour
+        then pure ( st { lsRecent = pruned, lsCount = count, lsStart = start }
+                  , Just "Too many photographs from this connection in the last \
+                         \hour. Please wait a little, or type your proof into \
+                         \the proof checker directly." )
+        else pure ( LimitState (M.insert addr (now : mine) pruned) (count + 1) start
+                  , Nothing )
+
+-- | Best guess at who is calling. Render sits behind a proxy, so the socket
+-- address is the proxy's; X-Forwarded-For carries the original, with the
+-- client first.
+callerAddress :: ActionM String
+callerAddress = do
+  fwd <- header "x-forwarded-for"
+  case fwd of
+    Just t | not (TL.null t) -> pure (trimAddr (takeWhile (/= ',') (TL.unpack t)))
+    _                        -> show . remoteHost <$> request
+  where
+    trimAddr = dropWhile (== ' ') . reverse . dropWhile (== ' ') . reverse
 
 -- truth table auxiliaries
 
@@ -284,6 +376,9 @@ main = do
   -- Respect $PORT in prod (platform sets it). Default to 8080 locally.
   mPort   <- lookupEnv "PORT"
   let port = maybe 8080 id (mPort >>= readMaybe)
+
+  -- One limiter for the whole process, shared by every request.
+  limits <- newLimits
 
   scotty port $ do
     -- Simple request logging
@@ -544,8 +639,36 @@ main = do
     get "/photo" $ file "static/photo.html"
 
     post "/transcribe" $ do
+      -- Refuse an oversized body before reading it. The browser sends a
+      -- downscaled image; anything much larger did not come from our page.
+      req0 <- request
+      case requestBodyLength req0 of
+        KnownLength n | n > fromIntegral maxImageBytes -> do
+          status status413
+          json $ object
+            [ "status" .= ("too_large" :: String)
+            , "error"  .= ("That image is too large. Photograph the page \
+                           \rather than scanning it at high resolution." :: String) ]
+          finish
+        _ -> pure ()
+
+      addr    <- callerAddress
+      refused <- liftAndCatchIO (admit limits addr)
+      case refused of
+        Just msg -> do
+          status status429
+          json $ object [ "status" .= ("rate_limited" :: String), "error" .= msg ]
+          finish
+        Nothing -> pure ()
+
       raw <- body
-      case A.eitherDecode' raw of
+      if BL.length raw > fromIntegral maxImageBytes
+        then do
+          status status413
+          json $ object
+            [ "status" .= ("too_large" :: String)
+            , "error"  .= ("That image is too large." :: String) ]
+        else case A.eitherDecode' raw of
         Left e -> do
           status status400
           json $ object [ "status" .= ("bad_json" :: String), "error" .= e ]

@@ -8,14 +8,7 @@ Output one line per filled row, in exactly this format:
 
 depends
     Comma-separated line numbers, e.g. 1,2 — or empty if the cell is blank.
-
-    Read this column; do not work it out. A blank dependency cell is a normal
-    and meaningful thing: a line reached by discharging an assumption often
-    depends on nothing at all. If the cell on the page is empty, leave the
-    field empty. Never write a dependency you cannot actually see, and never
-    carry one down from the row above because it "should" be there. Getting
-    this wrong is not a small error: the dependency columns are half of what
-    the proof checker examines.
+    An empty dependency cell is meaningful; leave the field empty, do not omit it.
 
 line
     The pre-printed line number, digits only.
@@ -51,17 +44,6 @@ justification looks wrong for the formula on that row, or a dependency set
 looks incorrect, write down what is on the page regardless. Do not correct,
 complete, or tidy up the proof. A transcription that silently repairs an error
 is worse than useless, because the student is then told their mistake is fine.
-
-These pages are written in pencil, and often carry marks that were rubbed
-out rather than removed. An erasure leaves a faint grey ghost, noticeably
-lighter than the writing around it — a stray letter in front of a rule name, a
-half-visible rule beside a different one. Transcribe the dark strokes and
-ignore the faint ones.
-
-That is a judgement about which marks are writing, not about whether the proof
-is any good. Never discount a firmly written mark because it would make the
-proof wrong: a clearly written rule that does not fit the line is exactly the
-sort of mistake this transcription exists to capture.
 
 If a cell is genuinely illegible, write ??? in it rather than guessing.
 

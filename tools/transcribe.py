@@ -57,10 +57,14 @@ DEFAULT_TIMEOUT = 600
 # /transcribe route in Web.hs use one text rather than two that drift apart.
 PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "transcribe.txt"
 
-try:
-    PROMPT = PROMPT_PATH.read_text()
-except FileNotFoundError:                       # pragma: no cover
-    sys.exit(f"missing prompt file: {PROMPT_PATH}")
+def load_prompt(path: Path) -> str:
+    try:
+        return path.read_text()
+    except FileNotFoundError:
+        sys.exit(f"missing prompt file: {path}")
+
+
+PROMPT = load_prompt(PROMPT_PATH)
 
 
 def encode_image(path: Path) -> tuple[str, str]:
@@ -314,6 +318,9 @@ def main() -> int:
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--only", default="", help="comma-separated stems, e.g. 000,015")
+    ap.add_argument("--prompt", type=Path, default=PROMPT_PATH,
+                    help="prompt file to use, for comparing variants "
+                         "(default %(default)s)")
     ap.add_argument("--no-thinking", action="store_true",
                     help="disable extended thinking; much faster on dense pages")
     ap.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT,
@@ -325,6 +332,9 @@ def main() -> int:
     ap.add_argument("--overwrite", action="store_true",
                     help="re-transcribe images that already have output")
     args = ap.parse_args()
+
+    global PROMPT
+    PROMPT = load_prompt(args.prompt)
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not args.mock and not api_key:

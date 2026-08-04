@@ -81,6 +81,7 @@ executable web
   build-depends:
       base
     , lemmon-checker
+    , time
     , scotty
     , wai
     , wai-middleware-static
