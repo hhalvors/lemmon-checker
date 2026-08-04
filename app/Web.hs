@@ -42,6 +42,8 @@ import Control.Concurrent.MVar             (MVar, newMVar, modifyMVar)
 import Control.Exception                   (try, SomeException, displayException)
 import qualified Network.HTTP.Client       as HC
 import qualified GHC.IO.Encoding           as Enc
+import           System.IO                   (hSetBuffering, stdout, stderr,
+                                              BufferMode (LineBuffering))
 import Data.Time.Clock                     (UTCTime, getCurrentTime, diffUTCTime)
 import Control.Monad.IO.Class (liftIO)
 import Control.Applicative ((<|>))
@@ -934,6 +936,14 @@ main = do
   -- is UTF-8 and carries the logical symbols, so the same code reads a
   -- different prompt in the two places. Fixing it here rather than only in the
   -- Dockerfile means it holds wherever this runs.
+  -- GHC block-buffers stdout when it is a pipe, which it is under Docker. Two
+  -- lines written at startup then sit in an 8 KB buffer until later output
+  -- pushes them out, so they appear late, out of order with the request log,
+  -- or -- if the process is killed first -- not at all. Every diagnostic in
+  -- this file has been arriving through that buffer.
+  hSetBuffering stdout LineBuffering
+  hSetBuffering stderr LineBuffering
+
   inherited <- Enc.getLocaleEncoding
   Enc.setLocaleEncoding Enc.utf8
   Enc.setFileSystemEncoding Enc.utf8
@@ -1284,6 +1294,19 @@ main = do
     -- same page photographed at four resolutions. If the small ones survive
     -- and the large ones do not, downscaling harder in photo.html is a fix we
     -- can ship today rather than waiting on Render.
+    -- What this process makes of the prompt file, answered without touching
+    -- the network or the log buffer.
+    get "/health/prompt" $ do
+      diag <- liftAndCatchIO promptDiag
+      json $ object
+        [ "inheritedEncoding" .= show inherited
+        , "prompt"            .= diag
+        , "note" .= ("inheritedEncoding is what the container supplied before \
+                     \main forced UTF-8. If it is ASCII or ANSI_X3.4-1968 then \
+                     \every readFile and putStrLn in this process was decoding \
+                     \and encoding wrongly, and prompts/transcribe.txt is UTF-8 \
+                     \with the logical symbols in it." :: String) ]
+
     -- The 2x2: image big/small crossed with prompt raw/ASCII-only, plus what
     -- the container thinks the prompt file says.
     get "/transcribe/matrix" $ do
