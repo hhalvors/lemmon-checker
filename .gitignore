@@ -48,4 +48,4 @@ training-data/
 *.dylib
 *.so
 # Eval predictions are generated output, not source
-eval/pred/
+eval/pred*/

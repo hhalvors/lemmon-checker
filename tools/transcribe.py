@@ -44,7 +44,12 @@ MAX_EDGE = 1568
 # eighteen-row page was observed spending 4095 thinking tokens and emitting no
 # text at all, so this needs generous headroom; the reply itself is under a
 # thousand tokens even for the longest proof in the corpus.
-DEFAULT_MAX_TOKENS = 16000
+DEFAULT_MAX_TOKENS = 8000
+
+# A large budget means a slow reply: the request is not streamed, so the socket
+# has to stay open until the whole thing is generated. 120s was too short and
+# turned a slow page into a cascade of timeouts and retries.
+DEFAULT_TIMEOUT = 600
 
 # The closed vocabulary the justification column is allowed to use. Keep in
 # step with ruleAliases in src/PipeParse.hs.
@@ -129,7 +134,7 @@ def encode_image(path: Path) -> tuple[str, str]:
 
 
 def build_request(media_type: str, b64: str, model: str, feedback: str = "",
-                  max_tokens: int = 0) -> dict:
+                  max_tokens: int = 0, no_thinking: bool = False) -> dict:
     text = PROMPT
     if feedback:
         text += (
@@ -138,7 +143,7 @@ def build_request(media_type: str, b64: str, model: str, feedback: str = "",
             "content to satisfy these notes — if a cell really is blank, leave "
             "it blank.\n\n" + feedback
         )
-    return {
+    body = {
         "model": model,
         "max_tokens": max_tokens or DEFAULT_MAX_TOKENS,
         "messages": [
@@ -158,6 +163,12 @@ def build_request(media_type: str, b64: str, model: str, feedback: str = "",
             }
         ],
     }
+    if no_thinking:
+        # Transcription is perception, not reasoning: the model should read the
+        # cells, not deliberate about the proof. On the densest page in the
+        # corpus, thinking consumed the entire budget and produced no text.
+        body["thinking"] = {"type": "disabled"}
+    return body
 
 
 # Canonical rule tokens, matching ruleAliases in src/PipeParse.hs.
@@ -268,7 +279,8 @@ def validate(pipe: str) -> list[str]:
     return problems
 
 
-def call_api(payload: dict, api_key: str, retries: int = 3) -> tuple[str, dict]:
+def call_api(payload: dict, api_key: str, retries: int = 3,
+             timeout: int = DEFAULT_TIMEOUT) -> tuple[str, dict]:
     """Return (concatenated text, raw response).
 
     The raw response is handed back so that a reply containing no text can be
@@ -286,7 +298,7 @@ def call_api(payload: dict, api_key: str, retries: int = 3) -> tuple[str, dict]:
     for attempt in range(retries):
         req = urllib.request.Request(API_URL, data=body, headers=headers)
         try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = json.load(resp)
             text = "".join(
                 blk.get("text", "") for blk in data.get("content", [])
@@ -326,6 +338,13 @@ def extract_pipe(reply: str) -> str:
         # Drop a header row if one slipped through.
         if re.search(r"depends", line, re.I) and re.search(r"justif", line, re.I):
             continue
+        # Drop blank template rows. Most of the nineteen rows on the page are
+        # unused, and a row with no formula is not a proof line whatever else
+        # is in it. An illegible cell comes through as "???", not as empty, so
+        # this does not discard anything a student wrote.
+        cols = line.split("|")
+        if len(cols) == 4 and not cols[2].strip():
+            continue
         rows.append(line)
     return "\n".join(rows) + ("\n" if rows else "")
 
@@ -336,6 +355,10 @@ def main() -> int:
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--only", default="", help="comma-separated stems, e.g. 000,015")
+    ap.add_argument("--no-thinking", action="store_true",
+                    help="disable extended thinking; much faster on dense pages")
+    ap.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT,
+                    help="seconds to wait for one reply (default %(default)s)")
     ap.add_argument("--max-tokens", type=int, default=DEFAULT_MAX_TOKENS,
                     help="output budget, covering extended thinking as well as "
                          "the reply (default %(default)s)")
@@ -370,7 +393,10 @@ def main() -> int:
     failures = 0
     for path in images:
         dest = args.out / f"{path.stem}.pipe"
-        if dest.exists() and not args.overwrite:
+        # An empty file is not a result. Treat it as absent so a failed or
+        # truncated earlier run is retried rather than silently skipped.
+        done = dest.exists() and dest.stat().st_size > 0
+        if done and not args.overwrite:
             print(f"{path.stem}: skipped (exists)")
             continue
         try:
@@ -382,15 +408,20 @@ def main() -> int:
             else:
                 media, b64 = encode_image(path)
                 budget = args.max_tokens
+                print(f"{path.stem}: requesting (max_tokens={budget}, "
+                      f"timeout={args.timeout}s)...", flush=True)
                 reply, raw = call_api(
-                    build_request(media, b64, args.model, max_tokens=budget), api_key)
+                    build_request(media, b64, args.model, max_tokens=budget,
+                                  no_thinking=args.no_thinking),
+                    api_key, timeout=args.timeout)
                 if not reply.strip() and raw.get("stop_reason") == "max_tokens":
                     budget *= 2
                     print(f"{path.stem}: budget exhausted before any text; "
                           f"retrying with max_tokens={budget}")
                     reply, raw = call_api(
-                        build_request(media, b64, args.model, max_tokens=budget),
-                        api_key)
+                        build_request(media, b64, args.model, max_tokens=budget,
+                                      no_thinking=args.no_thinking),
+                        api_key, timeout=args.timeout)
                 pipe = extract_pipe(reply)
                 problems = validate(pipe) if pipe else ["no pipe rows in reply"]
                 if problems:
@@ -399,7 +430,9 @@ def main() -> int:
                     print(f"{path.stem}: retrying ({len(problems)} problem(s))")
                     reply2, raw2 = call_api(
                         build_request(media, b64, args.model, feedback=note,
-                                      max_tokens=budget), api_key
+                                      max_tokens=budget,
+                                      no_thinking=args.no_thinking),
+                        api_key, timeout=args.timeout
                     )
                     pipe2 = extract_pipe(reply2)
                     problems2 = validate(pipe2) if pipe2 else ["no pipe rows in reply"]

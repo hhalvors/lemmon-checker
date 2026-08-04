@@ -86,6 +86,11 @@ splitOn4 s = case break (== '|') s of
 verdictOf :: Side -> Verdict
 verdictOf sd = case sProof sd of
   Nothing -> VUnparseable
+  -- An empty transcription is a failure, not a vacuous theorem. proofValid
+  -- folds over the lines, so the empty proof comes back True; counting that
+  -- as agreement would let a recogniser that produced nothing at all score as
+  -- having got the verdict right.
+  Just [] -> VUnparseable
   Just p  -> if proofValid (checkProof p) then VValid else VInvalid
 
 data Outcome
