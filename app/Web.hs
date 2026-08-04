@@ -41,6 +41,7 @@ import Control.Concurrent                  (threadDelay)
 import Control.Concurrent.MVar             (MVar, newMVar, modifyMVar)
 import Control.Exception                   (try, SomeException, displayException)
 import qualified Network.HTTP.Client       as HC
+import qualified GHC.IO.Encoding           as Enc
 import Data.Time.Clock                     (UTCTime, getCurrentTime, diffUTCTime)
 import Control.Monad.IO.Class (liftIO)
 import Control.Applicative ((<|>))
@@ -570,6 +571,63 @@ runRealProbe doStream size = do
       r <- liftAndCatchIO $ realImageProbe k doStream size
       json $ object [ "status" .= ("done" :: String), "result" .= r ]
 
+-- | The two-by-two the evidence actually points at.
+--
+-- Every probe that passes uses a short hardcoded ASCII prompt. Every probe
+-- that fails reads prompts/transcribe.txt, which is UTF-8 and carries the
+-- logical symbols. That correlation is exact across everything measured so
+-- far, and it has never been varied deliberately -- the image was varied
+-- instead, four times, and made no difference at all (41 KB fails exactly as
+-- 244 KB does, both at fifteen seconds).
+--
+-- The ASCII arm keeps the prompt's length and structure and replaces only the
+-- characters above 127, so the sole difference between the two arms is whether
+-- non-ASCII text goes out in the body.
+matrixProbe :: String -> Bool -> Bool -> IO String
+matrixProbe rawKey bigImage rawPrompt = do
+  t0      <- getCurrentTime
+  prompt0 <- readFile promptFile
+  b64     <- if bigImage
+               then T.pack . filter (\c -> c /= '\n' && c /= '\r')
+                      <$> readFile "static/probe-md.b64"
+               else pure tinyJpegB64
+  let prompt = if rawPrompt
+                 then prompt0
+                 else map (\c -> if c > '\DEL' then '?' else c) prompt0
+      label  = (if bigImage then "125 KB image" else "8x8 image")
+               ++ " + " ++ (if rawPrompt then "prompt as-is" else "prompt ASCII-only")
+               ++ ": "
+  initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
+  let payload = A.object
+        [ "model"      .= ("claude-sonnet-5" :: String)
+        , "max_tokens" .= (8000 :: Int)
+        , "thinking"   .= A.object [ "type" .= ("disabled" :: String) ]
+        , "messages"   .= [ A.object
+            [ "role"    .= ("user" :: String)
+            , "content" .=
+                [ A.object
+                    [ "type"   .= ("image" :: String)
+                    , "source" .= A.object
+                        [ "type"       .= ("base64" :: String)
+                        , "media_type" .= ("image/jpeg" :: String)
+                        , "data"       .= b64 ] ]
+                , A.object [ "type" .= ("text" :: String), "text" .= prompt ]
+                ] ] ]
+        ]
+      req = setRequestBodyLBS (A.encode payload)
+          $ setRequestHeader "content-type"      ["application/json"]
+          $ setRequestHeader "x-api-key"         [BS.pack (trimKey rawKey)]
+          $ setRequestHeader "anthropic-version" ["2023-06-01"]
+          $ initReq { HC.responseTimeout = HC.responseTimeoutMicro (90 * 1000000) }
+  outcome <- try (httpLBS req)
+  t1 <- getCurrentTime
+  let secs = show (round (realToFrac (diffUTCTime t1 t0) :: Double) :: Int) ++ "s"
+  pure $ case outcome of
+    Left e     -> label ++ "FAILED after " ++ secs ++ " -- "
+                  ++ briefly (flatten (redact (displayException (e :: SomeException))))
+    Right resp -> label ++ "succeeded after " ++ secs ++ ", HTTP "
+                  ++ show (getResponseStatusCode resp)
+
 -- | A faithful reproduction of the request that fails.
 --
 -- Every passing probe so far sits in one of two boxes: long but with no real
@@ -738,9 +796,38 @@ assembleSSE body =
 -- ResponseTimeout and NoResponseDataReceived are quite different failures and
 -- the distinction was being truncated away.
 briefly :: String -> String
-briefly e = case break (== '}') (reverse e) of
-  (tailPart, _) -> let s = reverse tailPart
-                   in if null (dropWhile (== ' ') s) then take 120 e else take 120 s
+briefly e
+  | length e <= 220 = e
+  | otherwise       = take 70 e ++ " ... " ++ reverse (take 140 (reverse e))
+
+-- | What the container thinks the prompt file says.
+--
+-- readFile decodes using the locale encoding. macOS sets a UTF-8 locale;
+-- debian:bullseye-slim sets none, so GHC falls back to ASCII -- and
+-- prompts/transcribe.txt is UTF-8 containing the logical symbols. If the
+-- decode is wrong the character count rises (each three-byte symbol becoming
+-- three characters) and the highest code point drops to 255. Comparing this
+-- line against the same route run locally settles it without argument.
+promptDiag :: IO String
+promptDiag = do
+  enc <- try Enc.getLocaleEncoding
+  r   <- try (do p <- readFile promptFile
+                 -- force it: readFile is lazy, so a decode error surfaces here
+                 -- rather than later inside the request body
+                 let n  = length p
+                     hi = maximum (0 : map fromEnum p)
+                     na = length (filter (> '\DEL') p)
+                 n `seq` hi `seq` pure (n, hi, na))
+  let encS = case enc of
+               Left e        -> "locale ?? (" ++ take 40 (show (e :: SomeException)) ++ ")"
+               Right x       -> "locale " ++ show x
+  pure $ encS ++ ", " ++ case r of
+    Left e            -> "readFile FAILED: "
+                         ++ take 120 (flatten (show (e :: SomeException)))
+    Right (n, hi, na) -> show n ++ " chars, " ++ show na
+                         ++ " non-ASCII, max code point " ++ show hi
+                         ++ (if hi > 255 then " (decoded as UTF-8, correct)"
+                                         else " (NOT UTF-8 -- symbols are mangled)")
 
 stage :: String -> IO ()
 stage msg = do
@@ -841,6 +928,21 @@ instance A.FromJSON ModelCheckReq where
 
 main :: IO ()
 main = do
+  -- Do not inherit the locale. readFile and putStrLn decode and encode with
+  -- whatever the environment says, and the deployment container sets nothing,
+  -- so GHC falls back to ASCII -- while a Mac supplies UTF-8. The prompt file
+  -- is UTF-8 and carries the logical symbols, so the same code reads a
+  -- different prompt in the two places. Fixing it here rather than only in the
+  -- Dockerfile means it holds wherever this runs.
+  inherited <- Enc.getLocaleEncoding
+  Enc.setLocaleEncoding Enc.utf8
+  Enc.setFileSystemEncoding Enc.utf8
+  Enc.setForeignEncoding Enc.utf8
+  putStrLn ("[startup] inherited locale encoding: " ++ show inherited
+            ++ " (now forced to UTF-8)")
+  before <- promptDiag
+  putStrLn ("[startup] prompt file: " ++ before)
+
   -- Respect $PORT in prod (platform sets it). Default to 8080 locally.
   mPort   <- lookupEnv "PORT"
   let port = maybe 8080 id (mPort >>= readMaybe)
@@ -1182,6 +1284,18 @@ main = do
     -- same page photographed at four resolutions. If the small ones survive
     -- and the large ones do not, downscaling harder in photo.html is a fix we
     -- can ship today rather than waiting on Render.
+    -- The 2x2: image big/small crossed with prompt raw/ASCII-only, plus what
+    -- the container thinks the prompt file says.
+    get "/transcribe/matrix" $ do
+      diag <- liftAndCatchIO promptDiag
+      mKey <- liftAndCatchIO $ lookupEnv "ANTHROPIC_API_KEY"
+      case mKey of
+        Nothing -> json $ object [ "prompt" .= diag, "error" .= ("no key" :: String) ]
+        Just k  -> do
+          rs <- liftAndCatchIO $ sequence
+                  [ matrixProbe k big raw | big <- [False, True], raw <- [False, True] ]
+          json $ object [ "prompt" .= diag, "matrix" .= rs ]
+
     get "/transcribe/realprobe/xs" $ runRealProbe False "xs"
     get "/transcribe/realprobe/sm" $ runRealProbe False "sm"
     get "/transcribe/realprobe/md" $ runRealProbe False "md"

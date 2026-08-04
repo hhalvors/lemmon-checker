@@ -30,6 +30,10 @@ RUN apt-get update -y && \
 RUN useradd -m app
 WORKDIR /app
 
+# Deliberately no LANG here. Web.hs sets the encoding itself, which holds
+# wherever the binary runs, and leaving the environment untouched lets the
+# startup log report what this image actually provides.
+
 # Copy the web binary and static assets
 COPY --from=build /app/bin/web /usr/local/bin/web
 COPY static ./static
