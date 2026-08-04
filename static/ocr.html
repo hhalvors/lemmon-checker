@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>OCR → Pipe Proof</title>
+  <link rel="stylesheet" href="/style.css" />
+  <style>
+    .card { max-width: 680px; margin: 1rem auto; }
+    .row  { display:flex; gap:.75rem; align-items:center; flex-wrap:wrap; }
+    .hint { color:#666; }
+    #preview { max-width:100%; max-height:320px; display:none; margin-top:.5rem; }
+    .status.ok  { color:#167d36; font-weight:600; }
+    .status.bad { color:#b00020; font-weight:600; }
+  </style>
+</head>
+<body>
+  <header><h1>OCR → Pipe Proof</h1></header>
+
+  <nav>
+    <a href="/">Home</a>
+    <a href="/proof">Proof Checker</a>
+    <a href="/model">Model Checker</a>
+    <a href="/prop">Truth Tables</a>
+    <a href="/prop/dnf">DNF</a>
+    <a href="/instructions">Instructions</a>
+  </nav>
+
+  <main>
+    <section class="card">
+      <p class="hint">Upload a photo/scan of a handwritten (or typed) proof. We’ll OCR it with Mathpix and send the output to the Proof Checker for you to edit and run.</p>
+
+      <div class="row">
+        <input id="file" type="file" accept="image/*,application/pdf" />
+        <button id="go" class="btn" disabled>Convert</button>
+        <span id="spin" class="hint" style="display:none">Processing…</span>
+      </div>
+
+      <img id="preview" alt="preview" />
+
+      <div id="status" class="status" style="margin-top:.5rem"></div>
+    </section>
+  </main>
+
+  <footer>&copy; 2025 Symbolic Logic Tools</footer>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const file = $('file'), go = $('go'), spin = $('spin'), status = $('status'), preview = $('preview');
+
+    file.addEventListener('change', () => {
+      status.textContent = '';
+      const f = file.files && file.files[0];
+      go.disabled = !f;
+      if (f && f.type.startsWith('image/')) {
+        const url = URL.createObjectURL(f);
+        preview.src = url;
+        preview.style.display = 'block';
+      } else {
+        preview.style.display = 'none';
+        preview.removeAttribute('src');
+      }
+    });
+
+    go.addEventListener('click', async () => {
+      const f = file.files && file.files[0];
+      if (!f) return;
+
+      status.textContent = '';
+      status.className = 'status';
+      go.disabled = true; spin.style.display = 'inline';
+
+      try {
+        // Read file as data URL so the server doesn’t need multipart parsing
+        const dataUrl = await new Promise((resolve, reject) => {
+          const fr = new FileReader();
+          fr.onerror = () => reject(new Error('File read error'));
+          fr.onload = () => resolve(fr.result);
+          fr.readAsDataURL(f);
+        });
+
+        const res = await fetch('/ocr', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dataUrl })
+        });
+
+    const data = await res.json();
+       if (data.status === 'ok') {
+  // Prefer the pipe-formatted proof, fallback to plain text
+  localStorage.setItem('proofDraft', data.pipe || data.text || '');
+  status.textContent = 'Converted. Opening Proof Checker…';
+  status.classList.add('ok');
+  window.location.href = '/proof';
+} else {
+  status.textContent = `${data.status}: ${data.error || 'Unknown error'}`;
+  status.classList.add('bad');
+}
+      } catch (e) {
+        status.textContent = `Error: ${String(e)}`;
+        status.classList.add('bad');
+      } finally {
+        go.disabled = false; spin.style.display = 'none';
+      }
+    });
+  </script>
+</body>
+</html>
