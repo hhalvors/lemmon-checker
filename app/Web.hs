@@ -390,6 +390,40 @@ sizeProbe rawKey kb = do
     Left e     -> (kb, "FAILED: " ++ take 90 (flatten (redact (displayException (e :: SomeException)))))
     Right resp -> (kb, "reached the API, HTTP " ++ show (getResponseStatusCode resp))
 
+-- | A valid request that deliberately takes a while to answer.
+--
+-- The size probes use an invalid model, so the API rejects them at once and
+-- the connection is never idle. A real transcription is silent for ten to
+-- thirty seconds while the model reads the page. If a slow request fails
+-- where a fast one of the same size succeeds, the problem is the idle period,
+-- not the payload -- and the remedy is streaming, which keeps bytes moving.
+slowProbe :: String -> IO String
+slowProbe rawKey = do
+  t0 <- getCurrentTime
+  initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
+  let payload = A.object
+        [ "model"      .= ("claude-sonnet-5" :: String)
+        , "max_tokens" .= (2000 :: Int)
+        , "thinking"   .= A.object [ "type" .= ("disabled" :: String) ]
+        , "messages"   .= [ A.object
+            [ "role"    .= ("user" :: String)
+            , "content" .= ("Write out the numbers from 1 to 400, separated by \
+                            \commas. Output nothing else." :: String) ] ]
+        ]
+      req = setRequestBodyLBS (A.encode payload)
+          $ setRequestHeader "content-type"      ["application/json"]
+          $ setRequestHeader "x-api-key"         [BS.pack (trimKey rawKey)]
+          $ setRequestHeader "anthropic-version" ["2023-06-01"]
+          $ initReq { HC.responseTimeout = HC.responseTimeoutMicro (180 * 1000000) }
+  outcome <- try (httpLBS req)
+  t1 <- getCurrentTime
+  let secs = show (round (realToFrac (diffUTCTime t1 t0) :: Double) :: Int) ++ "s"
+  pure $ case outcome of
+    Left e     -> "FAILED after " ++ secs ++ ": "
+                  ++ take 90 (flatten (redact (displayException (e :: SomeException))))
+    Right resp -> "succeeded after " ++ secs ++ ", HTTP "
+                  ++ show (getResponseStatusCode resp)
+
 -- | Run an action, retrying a failure a few times with a short pause.
 retrying :: Int -> IO (Either SomeException a) -> IO (Either SomeException a)
 retrying n act = do
@@ -780,14 +814,18 @@ main = do
         Just k -> do
           r      <- liftAndCatchIO $ tinyAnthropicCall k
           probes <- liftAndCatchIO $ mapM (sizeProbe k) [16, 64, 128, 256, 512]
+          slow   <- liftAndCatchIO $ slowProbe k
           json $ object
             [ "status"  .= (either (const "failed") (const "ok") r :: String)
             , "tiny"    .= either id (\c -> "HTTP " ++ show c) r
             , "bySize"  .= [ object [ "kb" .= kb, "result" .= res ]
                            | (kb, res) <- probes ]
-            , "note"    .= ("The transcription request is about 600 KB. The \
-                            \largest size below that reaches the API is the \
-                            \limit we are hitting." :: String)
+            , "slowRequest" .= slow
+            , "note"    .= ("The size probes are rejected instantly, so their \
+                            \connections are never idle. slowRequest is small \
+                            \but takes many seconds to answer. If that one \
+                            \fails, the idle period is the problem, not the \
+                            \payload." :: String)
             ]
 
     -- Photograph a proof, confirm the transcription, then check it
