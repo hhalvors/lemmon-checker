@@ -40,6 +40,12 @@ DEFAULT_MODEL = "claude-sonnet-5"
 # Anthropic resizes anything larger; doing it here keeps the request small.
 MAX_EDGE = 1568
 
+# The budget covers extended thinking as well as the visible reply. A dense
+# eighteen-row page was observed spending 4095 thinking tokens and emitting no
+# text at all, so this needs generous headroom; the reply itself is under a
+# thousand tokens even for the longest proof in the corpus.
+DEFAULT_MAX_TOKENS = 16000
+
 # The closed vocabulary the justification column is allowed to use. Keep in
 # step with ruleAliases in src/PipeParse.hs.
 RULE_FORMS = """\
@@ -122,7 +128,8 @@ def encode_image(path: Path) -> tuple[str, str]:
     return "image/jpeg", base64.b64encode(buf.getvalue()).decode()
 
 
-def build_request(media_type: str, b64: str, model: str, feedback: str = "") -> dict:
+def build_request(media_type: str, b64: str, model: str, feedback: str = "",
+                  max_tokens: int = 0) -> dict:
     text = PROMPT
     if feedback:
         text += (
@@ -133,7 +140,7 @@ def build_request(media_type: str, b64: str, model: str, feedback: str = "") -> 
         )
     return {
         "model": model,
-        "max_tokens": 4096,
+        "max_tokens": max_tokens or DEFAULT_MAX_TOKENS,
         "messages": [
             {
                 "role": "user",
@@ -329,6 +336,9 @@ def main() -> int:
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--only", default="", help="comma-separated stems, e.g. 000,015")
+    ap.add_argument("--max-tokens", type=int, default=DEFAULT_MAX_TOKENS,
+                    help="output budget, covering extended thinking as well as "
+                         "the reply (default %(default)s)")
     ap.add_argument("--mock", type=Path, help="canned reply file; skips the API")
     ap.add_argument("--overwrite", action="store_true",
                     help="re-transcribe images that already have output")
@@ -371,7 +381,16 @@ def main() -> int:
                 problems = validate(pipe) if pipe else ["no pipe rows in reply"]
             else:
                 media, b64 = encode_image(path)
-                reply, raw = call_api(build_request(media, b64, args.model), api_key)
+                budget = args.max_tokens
+                reply, raw = call_api(
+                    build_request(media, b64, args.model, max_tokens=budget), api_key)
+                if not reply.strip() and raw.get("stop_reason") == "max_tokens":
+                    budget *= 2
+                    print(f"{path.stem}: budget exhausted before any text; "
+                          f"retrying with max_tokens={budget}")
+                    reply, raw = call_api(
+                        build_request(media, b64, args.model, max_tokens=budget),
+                        api_key)
                 pipe = extract_pipe(reply)
                 problems = validate(pipe) if pipe else ["no pipe rows in reply"]
                 if problems:
@@ -379,7 +398,8 @@ def main() -> int:
                     note = "\n".join("- " + p for p in problems)
                     print(f"{path.stem}: retrying ({len(problems)} problem(s))")
                     reply2, raw2 = call_api(
-                        build_request(media, b64, args.model, feedback=note), api_key
+                        build_request(media, b64, args.model, feedback=note,
+                                      max_tokens=budget), api_key
                     )
                     pipe2 = extract_pipe(reply2)
                     problems2 = validate(pipe2) if pipe2 else ["no pipe rows in reply"]
