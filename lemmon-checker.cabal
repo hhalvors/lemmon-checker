@@ -52,28 +52,25 @@ executable pipe-to-json
   hs-source-dirs:      app
   main-is:             PipeToJson.hs
   ghc-options:         -Wall
+  -- Parsing comes from the library (PipeParse), so this exe no longer needs
+  -- split/parsec/text/containers of its own.
   build-depends:
       base >=4.7 && <5,
       aeson,
-      text,
-      bytestring,     
-      split,          
-      containers,
-      parsec,
+      bytestring,
       lemmon-checker
   default-language:    Haskell2010
 
 executable pipe-check
   hs-source-dirs:      app
   main-is:             PipeCheck.hs
+  -- Parsing comes from the library (PipeParse); containers is still needed
+  -- for Data.Set in the JSON report.
   build-depends:
       base >=4.7 && <5
     , aeson
     , bytestring
-    , text
     , containers
-    , split
-    , parsec
     , lemmon-checker
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -99,6 +96,18 @@ executable web
     , vector
     , blaze-html
     , blaze-markup
+  default-language:    Haskell2010
+
+executable eval-score
+  main-is:             EvalScore.hs
+  hs-source-dirs:      app
+  ghc-options:         -Wall
+  build-depends:
+      base >=4.7 && <5
+    , containers
+    , directory
+    , filepath
+    , lemmon-checker
   default-language:    Haskell2010
 
 executable model-test

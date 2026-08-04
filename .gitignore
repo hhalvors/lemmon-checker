@@ -47,3 +47,5 @@ training-data/
 *.zip
 *.dylib
 *.so
+# Eval predictions are generated output, not source
+eval/pred/

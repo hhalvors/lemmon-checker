@@ -49,84 +49,52 @@ readInts s =
 -- Justification parsing (strict: numbers first, then rule; ∀I var optional)
 --------------------------------------------------------------------------------
 
+-- | Canonical name for a rule token.
+--
+-- Matching is tried exactly first, then case-insensitively. Handwriting is
+-- not careful about case — "cP" and "andI" both turn up in the sample
+-- photographs — and the OCR pipeline should not fail on that. The exact pass
+-- runs first so that case-carrying aliases such as "vI" for ∨I keep working:
+-- upper-casing alone would turn "vI" into "VI" and lose it.
+ruleAliases :: [(String, String)]
+ruleAliases =
+  [ ("A", "A"), ("Assumption", "A")
+
+  , ("MP", "MP"), ("MT", "MT"), ("DN", "DN"), ("CP", "CP"), ("QN", "QN")
+
+  , ("∧I", "∧I"), ("&I", "∧I"), ("ANDI", "∧I"), ("/\\I", "∧I")
+  , ("∧E", "∧E"), ("&E", "∧E"), ("ANDE", "∧E"), ("/\\E", "∧E")
+
+  , ("∨I", "∨I"), ("vI", "∨I"), ("\\/I", "∨I"), ("ORI", "∨I")
+  , ("∨E", "∨E"), ("vE", "∨E"), ("\\/E", "∨E"), ("ORE", "∨E")
+
+  , ("↔I", "↔I"), ("<->I", "↔I"), ("IFFI", "↔I"), ("BIDI", "↔I")
+  , ("↔E", "↔E"), ("<->E", "↔E"), ("IFFE", "↔E"), ("BIDE", "↔E")
+
+  , ("RAA", "RAA"), ("RA", "RAA"), ("¬I", "RAA"), ("~I", "RAA")
+
+  , ("∀E", "∀E"), ("UE", "∀E"), ("ForallE", "∀E")
+  , ("∀I", "∀I"), ("UI", "∀I"), ("ForallI", "∀I")
+  , ("∃I", "∃I"), ("EI", "∃I"), ("ExistsI", "∃I")
+  , ("∃E", "∃E"), ("EE", "∃E"), ("ExistsE", "∃E")
+
+  , ("=E", "=E"), ("=I", "=I")
+
+  , ("LEM", "LEM"), ("prop taut", "prop taut")
+  ]
+
+-- The same table keyed by upper-cased alias, for the case-insensitive pass.
+ruleAliasesUpper :: [(String, String)]
+ruleAliasesUpper = [ (map toUpper a, r) | (a, r) <- ruleAliases ]
+
 normalizeRule :: String -> String
 normalizeRule raw =
-  case raw of
-    -- Assumption
-    "A"           -> "A"
-    "Assumption"  -> "A"
-
-    -- Propositional rules
-    "MP"          -> "MP"
-    "MT"          -> "MT"
-    "DN"          -> "DN"
-    "CP"          -> "CP"
-  
-    -- ∧-Intro / Elim
-    "∧I"          -> "∧I"
-    "&I"          -> "∧I"
-    "ANDI"        -> "∧I"
-    "/\\I"        -> "∧I"
-
-    "∧E"          -> "∧E"
-    "&E"          -> "∧E"
-    "ANDE"        -> "∧E"
-    "/\\E"        -> "∧E"
-
-    -- ∨-Intro / Elim
-    "∨I"          -> "∨I"
-    "vI"          -> "∨I"
-    "\\/I"        -> "∨I"
-    "ORI"         -> "∨I"
-
-    "∨E"          -> "∨E"
-    "vE"          -> "∨E"
-    "\\/E"        -> "∨E"
-    "ORE"         -> "∨E"
-
-    -- ↔-Intro / Elim  🔴 NEW
-    "↔I"          -> "↔I"
-    "<->I"        -> "↔I"
-    "IFFI"        -> "↔I"
-    "BIDI"        -> "↔I"
-
-    "↔E"          -> "↔E"
-    "<->E"        -> "↔E"
-    "IFFE"        -> "↔E"
-    "BIDE"        -> "↔E"
-
-    -- Negation intro as RAA
-    "RAA"         -> "RAA"
-    "RA"          -> "RAA"
-    "¬I"          -> "RAA"
-    "~I"          -> "RAA"
-
-    -- Quantifier rules
-    "∀E"          -> "∀E"
-    "UE"          -> "∀E"
-    "ForallE"     -> "∀E"
-
-    "∀I"          -> "∀I"
-    "UI"          -> "∀I"
-    "ForallI"     -> "∀I"
-
-    "∃I"          -> "∃I"
-    "EI"          -> "∃I"
-    "ExistsI"     -> "∃I"
-
-    "∃E"          -> "∃E"
-    "EE"          -> "∃E"
-    "ExistsE"     -> "∃E"
-
-    "=E"          -> "=E"
-
-    "=I"          -> "=I"
-
-    "LEM"         -> "LEM"
-
-    "prop taut"   -> "prop taut"
-
-    other         -> other
+  case lookup raw ruleAliases of
+    Just r  -> r
+    Nothing ->
+      case lookup (map toUpper raw) ruleAliasesUpper of
+        Just r  -> r
+        Nothing -> raw
 
 -- | The variables bound by a formula's leading run of universal quantifiers.
 -- ∀x∀y φ ↦ ["x","y"]; anything not starting with ∀ ↦ [].
