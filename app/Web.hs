@@ -558,6 +558,64 @@ silenceProbe rawKey n = do
     Right resp -> "asked for " ++ show n ++ ", survived " ++ secs ++ " of silence, HTTP "
                   ++ show (getResponseStatusCode resp)
 
+-- | A faithful reproduction of the request that fails.
+--
+-- Every passing probe so far sits in one of two boxes: long but with no real
+-- image (bySilence, 47 seconds), or a real image but answered quickly
+-- (imageProbe, 12 seconds, an 8x8 JPEG). The failing request is the cell
+-- neither covers -- a genuine photograph and a long wait together.
+--
+-- static/probe.b64 is a real page from the evaluation corpus, downscaled to
+-- roughly the size the browser produces, stored already base64-encoded so this
+-- needs no encoder dependency. The prompt is the real one, so the model does
+-- the real work and takes the real amount of time.
+--
+-- The streaming flag matters because that combination is untested too: the
+-- long probes that pass are all non-streaming, and the streaming probes that
+-- pass are all short.
+realImageProbe :: String -> Bool -> IO String
+realImageProbe rawKey doStream = do
+  t0 <- getCurrentTime
+  rawB64 <- readFile "static/probe.b64"
+  prompt <- readFile promptFile
+  let b64 = T.pack (filter (\c -> c /= '\n' && c /= '\r') rawB64)
+      label = (if doStream then "streaming" else "non-streaming")
+              ++ ", " ++ show (T.length b64 `div` 1024) ++ " KB b64: "
+  initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
+  let payload = A.object
+        [ "model"      .= ("claude-sonnet-5" :: String)
+        , "max_tokens" .= (8000 :: Int)
+        , "stream"     .= doStream
+        , "thinking"   .= A.object [ "type" .= ("disabled" :: String) ]
+        , "messages"   .= [ A.object
+            [ "role"    .= ("user" :: String)
+            , "content" .=
+                [ A.object
+                    [ "type"   .= ("image" :: String)
+                    , "source" .= A.object
+                        [ "type"       .= ("base64" :: String)
+                        , "media_type" .= ("image/jpeg" :: String)
+                        , "data"       .= b64
+                        ]
+                    ]
+                , A.object [ "type" .= ("text" :: String), "text" .= prompt ]
+                ] ] ]
+        ]
+      req = setRequestBodyLBS (A.encode payload)
+          $ setRequestHeader "content-type"      ["application/json"]
+          $ setRequestHeader "x-api-key"         [BS.pack (trimKey rawKey)]
+          $ setRequestHeader "anthropic-version" ["2023-06-01"]
+          $ initReq { HC.responseTimeout = HC.responseTimeoutMicro (180 * 1000000) }
+  outcome <- try (httpLBS req)
+  t1 <- getCurrentTime
+  let secs = show (round (realToFrac (diffUTCTime t1 t0) :: Double) :: Int) ++ "s"
+  pure $ case outcome of
+    Left e     -> label ++ "FAILED after " ++ secs ++ " -- "
+                  ++ take 90 (flatten (redact (displayException (e :: SomeException))))
+    Right resp -> label ++ "succeeded after " ++ secs ++ ", HTTP "
+                  ++ show (getResponseStatusCode resp) ++ ", "
+                  ++ show (BL.length (getResponseBody resp) `div` 1024) ++ " KB back"
+
 -- | Kept for completeness, though 211 KB in the real request rules size out.
 --
 -- imageProbe pads the *text* block and leaves an 8x8 JPEG in the image, so the
@@ -610,11 +668,19 @@ bigImageProbe rawKey kb = do
 -- | Run an action, retrying a failure a few times with a short pause.
 retrying :: Int -> IO (Either SomeException a) -> IO (Either SomeException a)
 retrying n act = do
-  r <- act
+  -- Time each attempt separately. The handler reports only the last failure,
+  -- so a 31 second total could be one slow attempt or three quick ones, and
+  -- those point at quite different causes.
+  t0 <- getCurrentTime
+  r  <- act
+  t1 <- getCurrentTime
+  let secs = show (round (realToFrac (diffUTCTime t1 t0) :: Double) :: Int)
   case r of
     Right _              -> pure r
-    Left _ | n <= 1      -> pure r
-           | otherwise   -> threadDelay 1000000 >> retrying (n - 1) act
+    Left _ | n <= 1      -> stage ("attempt failed after " ++ secs ++ "s, giving up")
+                            >> pure r
+           | otherwise   -> stage ("attempt failed after " ++ secs ++ "s, retrying")
+                            >> threadDelay 1000000 >> retrying (n - 1) act
 
 -- | Assemble the reply from a stream of server-sent events.
 --
@@ -638,6 +704,17 @@ assembleSSE body =
       , Just (A.String t) <- KM.lookup "text" d
       = Just t
     deltaText _ = Nothing
+
+-- | A timestamped progress line.
+--
+-- Every probe on the outbound leg now passes, so the fault is either in the
+-- inbound POST or in this handler after the API answers -- and there is no way
+-- to tell which from the outside. This makes the log say where it stopped
+-- rather than leaving it to be inferred.
+stage :: String -> IO ()
+stage msg = do
+  t <- getCurrentTime
+  putStrLn ("[transcribe] " ++ takeWhile (/= '.') (drop 11 (show t)) ++ " " ++ msg)
 
 callAnthropic :: String -> T.Text -> T.Text -> String -> IO (Either String String)
 callAnthropic rawKey media b64 promptText = do
@@ -1026,6 +1103,7 @@ main = do
           imgs   <- liftAndCatchIO $ mapM (imageProbe k) [0, 400, 600]
           big    <- liftAndCatchIO $ mapM (bigImageProbe k) [1024, 4096]
           quiet  <- liftAndCatchIO $ mapM (silenceProbe k) [900, 1500, 2200, 3000]
+          real   <- liftAndCatchIO $ mapM (realImageProbe k) [False, True]
           json $ object
             [ "status"  .= (either (const "failed") (const "ok") r :: String)
             , "tiny"    .= either id (\c -> "HTTP " ++ show c) r
@@ -1036,6 +1114,16 @@ main = do
             , "withImageBlock"  .= imgs
             , "byImageSize"     .= big
             , "bySilence"       .= quiet
+            , "realRequest"     .= real
+            , "note2"   .= ("realRequest is now the one that matters: a real \
+                            \photograph from the corpus, the real prompt, \
+                            \max_tokens 8000, run both non-streaming and \
+                            \streaming. It is the request that fails, minus the \
+                            \browser. If it fails here the reproduction is in \
+                            \hand and can go to Render support as a GET anyone \
+                            \can run. If it succeeds, the fault is not in the \
+                            \call at all but in the inbound POST or in this \
+                            \handler, and /transcribe/echo separates those." :: String)
             , "note"    .= ("bySilence is the one that matters. The real \
                             \request posts 211 KB -- smaller than probes that \
                             \pass -- so size is not the cause. What it does is \
@@ -1049,6 +1137,22 @@ main = do
                             \help because the silence falls before the first \
                             \token exists." :: String)
             ]
+
+    -- The selftest is a GET, so it exercises none of the inbound path: no
+    -- large POST body, no proxy buffering it, no JSON decode of a quarter
+    -- megabyte. This does exactly that much and nothing else, so a failure
+    -- here locates the fault before the API is ever involved.
+    --
+    --   curl -s -X POST --data-binary @big.json <host>/transcribe/echo
+    post "/transcribe/echo" $ do
+      raw <- body
+      liftAndCatchIO $ stage ("echo: " ++ show (BL.length raw) ++ " bytes")
+      json $ object
+        [ "status" .= ("ok" :: String)
+        , "bytes"  .= BL.length raw
+        , "parses" .= (case A.eitherDecode' raw :: Either String A.Value of
+                         Left e  -> "no: " ++ take 120 e
+                         Right _ -> "yes") ]
 
     -- Photograph a proof, confirm the transcription, then check it
     get "/photo" $ file "static/photo.html"
@@ -1077,6 +1181,8 @@ main = do
         Nothing -> pure ()
 
       raw <- body
+      liftAndCatchIO $ stage ("inbound body read, "
+                              ++ show (BL.length raw `div` 1024) ++ " KB")
       if BL.length raw > fromIntegral maxImageBytes
         then do
           status status413
@@ -1114,7 +1220,14 @@ main = do
                         , "error"  .= ("ANTHROPIC_API_KEY is set but empty." :: String) ]
                     Just apiKey -> do
                       promptText <- liftAndCatchIO $ readFile promptFile
+                      liftAndCatchIO $ stage ("prompt read, " ++ show (length promptText)
+                                              ++ " chars; image b64 "
+                                              ++ show (T.length b64 `div` 1024) ++ " KB")
                       first <- liftAndCatchIO $ callAnthropic apiKey media b64 promptText
+                      liftAndCatchIO $ stage $ case first of
+                        Left e  -> "API call FAILED: "
+                                   ++ take 200 (flatten (redact e))
+                        Right s -> "API returned " ++ show (length s) ++ " chars"
                       case first of
                         Left decErr -> do
                           status status500
@@ -1129,6 +1242,9 @@ main = do
                           pipe <- case parsePipeProof pipe0 of
                             Right _ -> pure pipe0
                             Left perr -> do
+                              liftAndCatchIO $ stage
+                                ("first attempt did not parse; second call. "
+                                 ++ take 120 (flatten perr))
                               let note = promptText
                                        ++ "\n\nYour previous attempt could not be "
                                        ++ "read by the proof checker:\n\n" ++ perr
