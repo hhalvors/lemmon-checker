@@ -1,0 +1,6 @@
+1|1|∃x∀yRxy|A
+2|2|∀yRay|A
+2|3|Rab|2 ∀E
+2|4|∃xRxb|3 ∃I
+2|5|∀y∃xRxy|4 ∀I
+1|6|∀y∃xRxy|1,2,5 ∃E
