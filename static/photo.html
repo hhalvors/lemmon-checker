@@ -233,7 +233,7 @@
         // the app. Show the status and a snippet rather than a bare parse
         // error, which says nothing about what went wrong.
         setStatus('The server returned HTTP ' + res.status + ' rather than a '
-                  + 'result. ' + body.replace(/<[^>]*>/g, ' ').trim().slice(0, 120),
+                  + 'result. ' + body.replace(/<[^>]*>/g, ' ').trim().slice(0, 300),
                   'bad');
         return;
       }

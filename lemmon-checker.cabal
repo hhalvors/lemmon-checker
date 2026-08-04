@@ -92,6 +92,7 @@ executable web
     , containers
     , http-types
     , http-conduit
+    , http-client
     , http-client-tls
     , unordered-containers
     , vector

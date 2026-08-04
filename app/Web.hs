@@ -38,6 +38,8 @@ import TruthTable
 
 -- Utils & JSON
 import Control.Concurrent.MVar             (MVar, newMVar, modifyMVar)
+import Control.Exception                   (try, SomeException, displayException)
+import qualified Network.HTTP.Client       as HC
 import Data.Time.Clock                     (UTCTime, getCurrentTime, diffUTCTime)
 import Control.Monad.IO.Class (liftIO)
 import Control.Applicative ((<|>))
@@ -310,8 +312,18 @@ transcriptionNotices pipe =
   where trimS = dropWhile (== ' ') . reverse . dropWhile (== ' ') . reverse
 
 -- | One call to the Messages API, returning the raw decoded response.
+-- | Strip whitespace from a credential read out of the environment.
+--
+-- A key pasted into a dashboard field very easily carries a trailing newline
+-- or space. HTTP header values may not contain a newline, so http-client
+-- refuses to send the request at all, and the failure looks like a network
+-- fault rather than a mistyped secret.
+trimKey :: String -> String
+trimKey = f . f where f = reverse . dropWhile (`elem` (" \t\r\n" :: String))
+
 callAnthropic :: String -> String -> String -> String -> IO (Either String A.Value)
-callAnthropic apiKey media b64 promptText = do
+callAnthropic rawKey media b64 promptText = do
+  let apiKey = trimKey rawKey
   initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
   let payload = A.object
         [ "model"      .= ("claude-sonnet-5" :: String)
@@ -334,13 +346,34 @@ callAnthropic apiKey media b64 promptText = do
                 ]
             ] ]
         ]
+      -- http-client defaults to a 30 second response timeout. Reading a dense
+      -- page takes longer than that often enough to matter, and the failure
+      -- looks like a server fault rather than a slow one, so allow plenty.
+      timedOut = initReq { HC.responseTimeout = HC.responseTimeoutMicro (180 * 1000000) }
       req = setRequestBodyLBS (A.encode payload)
           $ setRequestHeader "content-type"      ["application/json"]
           $ setRequestHeader "x-api-key"         [BS.pack apiKey]
           $ setRequestHeader "anthropic-version" ["2023-06-01"]
-          $ initReq
-  resp <- httpLBS req
-  pure (A.eitherDecode' (getResponseBody resp))
+          $ timedOut
+  -- Catch rather than let the exception escape as an unhandled 500: a network
+  -- failure reaching the API is not an internal error, and the caller needs to
+  -- be told which it was.
+  outcome <- try (httpLBS req)
+  case outcome of
+    Left e -> do
+      let msg = displayException (e :: SomeException)
+      putStrLn ("[transcribe] request to api.anthropic.com failed: " ++ msg)
+      pure (Left ("Could not reach the transcription service. " ++ takeWhile (/= '\n') msg))
+    Right resp -> do
+      let code = getResponseStatusCode resp
+          bodyL = getResponseBody resp
+      if code < 200 || code >= 300
+        then do
+          putStrLn ("[transcribe] api.anthropic.com returned " ++ show code
+                    ++ ": " ++ take 400 (L8.unpack bodyL))
+          pure (Left ("The transcription service returned HTTP " ++ show code
+                      ++ ". " ++ take 200 (L8.unpack bodyL)))
+        else pure (A.eitherDecode' bodyL)
 
 collectTexts :: A.Value -> [T.Text]
 collectTexts (A.Object o) =
@@ -701,6 +734,11 @@ main = do
                       json $ object
                         [ "status" .= ("server_not_configured" :: String)
                         , "error"  .= ("Set ANTHROPIC_API_KEY on the server." :: String) ]
+                    Just apiKey | null (trimKey apiKey) -> do
+                      status status500
+                      json $ object
+                        [ "status" .= ("server_not_configured" :: String)
+                        , "error"  .= ("ANTHROPIC_API_KEY is set but empty." :: String) ]
                     Just apiKey -> do
                       promptText <- liftAndCatchIO $ readFile promptFile
                       first <- liftAndCatchIO $ callAnthropic apiKey media b64 promptText
