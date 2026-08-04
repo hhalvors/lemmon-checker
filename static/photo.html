@@ -5,15 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Check a Photographed Proof</title>
   <link rel="stylesheet" href="style.css" />
-  <style>
-    .card{max-width:1200px;margin:1.25rem auto;padding:1.25rem}
-    .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
-    .ok{color:#167d36;font-weight:600}
-    .bad{color:#b00020;font-weight:600}
-    .warn{color:#8a6100;font-weight:600}
-    .hint{opacity:.75}
-
-    /* Photo and transcription side by side, stacking on a phone. */
+  <style>/* Photo and transcription side by side, stacking on a phone. */
     .panes{display:flex;gap:1rem;align-items:flex-start;flex-wrap:wrap;margin-top:1rem}
     .pane{flex:1 1 22rem;min-width:min(100%,22rem)}
     .pane h2{font-size:1rem;margin:0 0 .4rem}
@@ -21,36 +13,26 @@
     #shot.zoomed{cursor:zoom-out;position:fixed;inset:0;width:100vw;height:100vh;
                  object-fit:contain;background:rgba(0,0,0,.9);z-index:50;padding:1rem}
     #pipeText{width:100%;min-height:16rem;resize:vertical;line-height:1.5}
-
-    .row{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap}
-    .actions{margin-top:.75rem;display:flex;gap:.75rem;align-items:center;flex-wrap:wrap}
-    .spacer{flex:1}
-
-    table{width:100%;border-collapse:collapse;margin-top:1rem}
-    th,td{padding:.5rem .6rem;border-top:1px solid #eee;vertical-align:top}
-    th{background:#fafafa;text-align:left}
-
-    .notices{margin:.6rem 0 0;padding:.6rem .8rem;border-left:3px solid #e0a800;
-             background:#fffbf0;border-radius:0 4px 4px 0;display:none}
-    .notices ul{margin:.3rem 0 0 1rem;padding:0}
+.notices ul{margin:.3rem 0 0 1.1rem;padding:0}
     .notices li{margin:.15rem 0}
-    .banner{margin-top:1rem;padding:.7rem .9rem;border-radius:6px;background:#f4f6f8}
-  </style>
+</style>
 </head>
 <body>
-  <header><h1>Check a Photographed Proof</h1></header>
-
-  <nav>
-    <a href="/">Home</a>
-    <a href="/proof">Proof Checker</a>
-    <a href="/photo" aria-current="page">Photo</a>
-    <a href="/template">Template</a>
-    <a href="/model">Model Checker</a>
-    <a href="/prop">Truth Tables</a>
-    <a href="/instructions">Instructions</a>
-  </nav>
-
-  <main>
+  <header class="site">
+  <div class="site-inner">
+    <a class="brand" href="/">Symbolic Logic Tools</a>
+    <nav>
+      <a href="/proof">Proof Checker</a>
+      <a href="/photo" aria-current="page">Photo</a>
+      <a href="/prop">Truth Tables</a>
+      <a href="/model">Model Checker</a>
+      <a href="/template">Template</a>
+      <a href="/instructions">Instructions</a>
+    </nav>
+  </div>
+</header>
+<main>
+    <h1 class="page-title">Check a Photographed Proof</h1>
     <section class="card">
       <p class="hint">
         Photograph your completed proof template, check that the transcription
@@ -88,7 +70,7 @@
           <textarea id="pipeText" class="mono" spellcheck="false"
             placeholder="The transcription will appear here. You can also type or paste a proof directly."></textarea>
 
-          <div id="notices" class="notices">
+          <div id="notices" class="callout caution notices hidden">
             <strong>Worth a second look before you check:</strong>
             <ul id="noticeList"></ul>
           </div>
@@ -202,7 +184,7 @@
     const f = file.files && file.files[0];
     if (!f) return;
     readBtn.disabled = true; spin.style.display = 'inline';
-    setStatus(''); clearResults(); notices.style.display = 'none';
+    setStatus(''); clearResults(); notices.classList.add('hidden');
 
     try {
       const res = await fetch('/transcribe', {
@@ -233,13 +215,13 @@
   // Anything the reader was unsure about, surfaced rather than buried.
   function showNotices(list) {
     noticeList.innerHTML = '';
-    if (!list.length) { notices.style.display = 'none'; return; }
+    if (!list.length) { notices.classList.add('hidden'); return; }
     for (const n of list) {
       const li = document.createElement('li');
       li.textContent = n;
       noticeList.appendChild(li);
     }
-    notices.style.display = 'block';
+    notices.classList.remove('hidden');
   }
 
   // --- editing -------------------------------------------------------------

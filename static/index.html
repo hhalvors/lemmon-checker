@@ -1,46 +1,79 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Symbolic Logic Tools</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header>
-    <h1>Symbolic Logic Tools</h1>
-    <nav>
-      <a href="/instructions.html" class="button secondary">Instructions</a>
-    </nav>
+  <header class="site">
+    <div class="site-inner">
+      <a class="brand" href="/">Symbolic Logic Tools</a>
+      <nav>
+        <a href="/proof">Proof Checker</a>
+        <a href="/photo">Photo</a>
+        <a href="/prop">Truth Tables</a>
+        <a href="/model">Model Checker</a>
+        <a href="/template">Template</a>
+        <a href="/instructions">Instructions</a>
+      </nav>
+    </div>
   </header>
 
   <main>
-    <h2>Select a Tool</h2>
-    <p>Welcome! Choose a tool to explore:</p>
+    <h1 class="page-title">Symbolic Logic Tools</h1>
+    <p class="page-intro">
+      Companion tools for <a
+      href="https://press.princeton.edu/books/paperback/9780691211954/how-logic-works"><em>How
+      Logic Works</em></a>. Check a natural-deduction proof, evaluate a
+      sentence in a finite structure, or build a truth table.
+    </p>
 
-    <section>
-      <h3>Proof Tools</h3>
-      <div class="button-group">
-        <a href="/proof" class="button">Proof Checker</a>
-        <a href="/photo" class="button">Check a Photo of a Proof</a>
-        <a href="/template" class="button">Blank Proof Template</a>
-        <a href="/prop" class="button">Truth Table Generator</a>
-        <a href="/prop/dnf" class="button">DNF Converter</a>
-      </div>
-    </section>
+    <h2 style="margin-top:0">Proofs</h2>
+    <div class="tiles">
+      <a class="tile" href="/proof">
+        <span class="tile-name">Proof checker</span>
+        <span class="tile-desc">Type a proof and have every line checked against the rules.</span>
+      </a>
+      <a class="tile" href="/photo">
+        <span class="tile-name">Check a photo of a proof</span>
+        <span class="tile-desc">Photograph a proof you wrote by hand. You confirm the reading before it is checked.</span>
+      </a>
+      <a class="tile" href="/template">
+        <span class="tile-name">Blank template</span>
+        <span class="tile-desc">A printable sheet to write proofs on. PDF.</span>
+      </a>
+    </div>
 
-    <section>
-      <h3>Model Tools</h3>
-      <div class="button-group">
-        <a href="/model" class="button">Model Checker</a>
-        <a href="/graph" class="button">Graphical Model Builder</a>
-      </div>
-    </section>
+    <h2>Sentences and models</h2>
+    <div class="tiles">
+      <a class="tile" href="/prop">
+        <span class="tile-name">Truth tables</span>
+        <span class="tile-desc">Every valuation of a propositional sentence, and its value under each.</span>
+      </a>
+      <a class="tile" href="/prop/dnf">
+        <span class="tile-name">DNF converter</span>
+        <span class="tile-desc">Rewrite a propositional sentence in disjunctive normal form.</span>
+      </a>
+      <a class="tile" href="/model">
+        <span class="tile-name">Model checker</span>
+        <span class="tile-desc">Build a finite structure and evaluate a closed sentence in it.</span>
+      </a>
+      <a class="tile" href="/graph">
+        <span class="tile-name">Graphical model builder</span>
+        <span class="tile-desc">Draw a structure and read off what holds in it.</span>
+      </a>
+    </div>
+
+    <div class="callout tip">
+      <p style="margin:0">
+        New here? The <a href="/instructions">instructions</a> cover how to
+        write formulas and which proof rules are available.
+      </p>
+    </div>
   </main>
 
-  <footer>
-    &copy; 2025 Symbolic Logic Tools
-  </footer>
+  <footer>&copy; 2025 Symbolic Logic Tools</footer>
 </body>
 </html>
-
-

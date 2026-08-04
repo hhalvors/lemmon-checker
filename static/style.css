@@ -1,122 +1,401 @@
-/* Global styles */
+/* =========================================================================
+   Symbolic Logic Tools — shared stylesheet
+   =========================================================================
+   One stylesheet for every page. Pages should not restate colour, spacing or
+   typography; if something is needed twice, it belongs here.
+
+   The look is deliberately quiet. This is a tool people use while thinking
+   about something hard, so the interface should stay out of the way: a
+   restrained palette, generous line height, and one accent colour used only
+   where something is clickable.
+   ========================================================================= */
+
+:root {
+  /* Neutrals, slightly cool so the accent sits naturally against them */
+  --bg:          #f6f7f9;
+  --surface:     #ffffff;
+  --surface-2:   #f2f4f7;
+  --border:      #e2e6ec;
+  --border-firm: #cfd5de;
+
+  --text:        #1c2430;
+  --text-muted:  #5b6675;
+  --text-faint:  #838d9b;
+
+  /* One accent, for links, focus and primary actions */
+  --accent:      #3a4fa8;
+  --accent-dark: #2c3d85;
+  --accent-soft: #eef1fb;
+
+  --ok:          #10683a;  --ok-soft:   #eaf6ee;
+  --bad:         #a3182b;  --bad-soft:  #fdeef0;
+  --warn:        #8a5a00;  --warn-soft: #fdf5e6;
+
+  --radius:      10px;
+  --radius-sm:   6px;
+  --shadow:      0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.06);
+
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+          Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+          monospace;
+
+  --measure: 68ch;     /* comfortable reading width for prose */
+  --page:    1080px;   /* outer width for tool pages */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:          #14171c;
+    --surface:     #1b1f26;
+    --surface-2:   #232830;
+    --border:      #2c323b;
+    --border-firm: #3a424e;
+
+    --text:        #e6eaf0;
+    --text-muted:  #a4aebc;
+    --text-faint:  #7d8794;
+
+    --accent:      #93a6ee;
+    --accent-dark: #b1bff5;
+    --accent-soft: #212739;
+
+    --ok:          #6fd39b;  --ok-soft:   #16281e;
+    --bad:         #f4919d;  --bad-soft:  #2a1a1d;
+    --warn:        #e5bd72;  --warn-soft: #2a2317;
+
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 1px 3px rgba(0,0,0,.25);
+  }
+}
+
+/* ---------- base ------------------------------------------------------ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
 body {
-  font-family: "Helvetica Neue", Arial, sans-serif;
   margin: 0;
-  padding: 0;
-  background: #f9f9fb;
-  color: #333;
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
 }
 
-header {
-  background: #283593;
-  color: white;
-  padding: 1em;
-  text-align: center;
+h1, h2, h3, h4 { line-height: 1.25; font-weight: 650; margin: 0 0 .5em; }
+h1 { font-size: 1.75rem; letter-spacing: -.015em; }
+h2 { font-size: 1.25rem; margin-top: 2rem; }
+h3 { font-size: 1.05rem; margin-top: 1.5rem; }
+
+p  { margin: 0 0 1rem; max-width: var(--measure); }
+ul, ol { max-width: var(--measure); }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:hover { color: var(--accent-dark); }
+
+hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
+
+/* A visible ring for keyboard users only */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+/* ---------- header and navigation ------------------------------------ */
+/* One compact bar, not a tall banner above a separate nav strip. The old
+   nav was a flex row that could not wrap, so on a narrow window the links
+   were simply clipped off the left edge. */
+
+header.site {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
 
-h1, h2 {
-  font-weight: 600;
+.site-inner {
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: .6rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
 }
+
+.brand {
+  font-weight: 680;
+  font-size: 1rem;
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+  letter-spacing: -.01em;
+}
+.brand:hover { color: var(--accent); }
+
+header.site nav {
+  display: flex;
+  flex-wrap: wrap;          /* the fix for the clipped links */
+  align-items: center;
+  gap: .25rem;
+  margin-left: auto;
+}
+
+header.site nav a {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: .9rem;
+  font-weight: 500;
+  padding: .35rem .6rem;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+header.site nav a:hover { color: var(--text); background: var(--surface-2); }
+header.site nav a[aria-current="page"],
+header.site nav a.active { color: var(--accent); background: var(--accent-soft); }
+
+/* ---------- page shell ------------------------------------------------ */
 
 main {
-  max-width: 800px;
-  margin: 2em auto;
-  padding: 1.5em;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
 }
 
-button, a.button {
-  display: inline-block;
-  padding: 0.6em 1.2em;
-  margin: 0.5em;
-  font-size: 1em;
-  font-weight: 500;
-  text-decoration: none;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  background: #3949ab;
-  color: white;
-  transition: background 0.2s ease-in-out;
-}
+main.prose { max-width: 780px; }   /* instructions read better narrower */
 
-button:hover, a.button:hover {
-  background: #1e2a78;
+.page-title { margin-bottom: .25rem; }
+.page-intro { color: var(--text-muted); margin-bottom: 2rem; max-width: var(--measure); }
+
+/* One card layer only. A card inside a card gives the doubled
+   border-and-shadow that made the old pages look unfinished. */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.5rem;
 }
+.card + .card { margin-top: 1.25rem; }
+.card > :first-child { margin-top: 0; }
+.card > :last-child  { margin-bottom: 0; }
 
 footer {
-  margin-top: 2em;
-  text-align: center;
-  color: #777;
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+  color: var(--text-faint);
+  font-size: .875rem;
+  border-top: 1px solid var(--border);
 }
+
+/* ---------- buttons --------------------------------------------------- */
+
+button, .btn, a.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  font: inherit;
+  font-size: .95rem;
+  font-weight: 550;
+  padding: .5rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: #fff;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease;
+}
+button:hover, .btn:hover, a.button:hover { background: var(--accent-dark); color: #fff; }
+button:disabled, .btn:disabled { opacity: .5; cursor: not-allowed; background: var(--accent); }
+
+/* Secondary: present, but not competing with the primary action */
+.btn.quiet, button.quiet, .button.secondary {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border-firm);
+}
+.btn.quiet:hover, button.quiet:hover, .button.secondary:hover {
+  background: var(--surface-2); color: var(--text);
+}
+
+@media (prefers-color-scheme: dark) {
+  button, .btn, a.button, button:hover, .btn:hover, a.button:hover { color: #10141a; }
+  .btn.quiet, button.quiet, .button.secondary { color: var(--text); }
+}
+
+/* ---------- tool tiles (home page) ------------------------------------ */
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: .875rem;
+  margin: 0 0 2rem;
+  padding: 0;
+  list-style: none;
+}
+
+.tile {
+  display: block;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.2rem;
+  text-decoration: none;
+  color: var(--text);
+  box-shadow: var(--shadow);
+  transition: border-color .12s ease, transform .12s ease;
+}
+.tile:hover { border-color: var(--accent); color: var(--text); transform: translateY(-1px); }
+.tile-name { display: block; font-weight: 620; margin-bottom: .15rem; }
+.tile-desc { display: block; color: var(--text-muted); font-size: .9rem; line-height: 1.45; }
+
+/* ---------- forms ------------------------------------------------------ */
+
+label { font-weight: 550; display: inline-block; margin-bottom: .35rem; }
+
+input[type=text], input[type=number], input[type=file], select, textarea {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-firm);
+  border-radius: var(--radius-sm);
+  padding: .5rem .65rem;
+  width: 100%;
+  max-width: 100%;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 
 textarea {
-  width: 100%;
-  max-width: 600px;  /* keeps it from being *too* wide on big screens */
-  height: 120px;     /* adjust to taste */
-  padding: 8px;
-  font-size: 1rem;
-  font-family: monospace; /* better for proofs */
-  border-radius: 6px;
-  border: 1px solid #ccc;
-  box-sizing: border-box;
+  font-family: var(--mono);
+  font-size: .95rem;
+  line-height: 1.55;
+  min-height: 12rem;
+  resize: vertical;
 }
 
-/* Navigation bar */
-nav {
-  background: #2c3e91;
-  padding: 0.75rem 2rem;   /* <-- add horizontal padding */
-  display: flex;
-  gap: 1.5rem;             /* spacing between links */
+.row     { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
+.actions { display: flex; gap: .625rem; align-items: center; flex-wrap: wrap; margin-top: 1rem; }
+.spacer  { flex: 1; }
+
+/* ---------- tables ----------------------------------------------------- */
+
+.table-wrap { overflow-x: auto; margin: 1rem 0; }
+
+table { width: 100%; border-collapse: collapse; font-size: .93rem; }
+th, td {
+  text-align: left;
+  padding: .55rem .7rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+thead th {
+  font-weight: 620;
+  font-size: .8rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-firm);
+  white-space: nowrap;
+}
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: var(--surface-2); }
+
+/* ---------- code, status, callouts ------------------------------------- */
+
+code, kbd, pre, .mono { font-family: var(--mono); }
+code {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: .1em .35em;
+  font-size: .9em;
+}
+pre {
+  overflow-x: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: .875rem 1rem;
+  font-size: .9rem;
+}
+pre code { background: none; border: 0; padding: 0; }
+kbd {
+  font-size: .85em;
+  background: var(--surface);
+  border: 1px solid var(--border-firm);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: .1rem .35rem;
 }
 
-nav a {
-  color: white;
-  text-decoration: none;
-  font-weight: 500;
+.hint, .muted { color: var(--text-muted); font-size: .925rem; }
+.faint { color: var(--text-faint); }
+.ok   { color: var(--ok);   font-weight: 600; }
+.bad  { color: var(--bad);  font-weight: 600; }
+.warn { color: var(--warn); font-weight: 600; }
+
+/* A left rule rather than a filled box: legible in both colour schemes,
+   and it does not shout. */
+.callout {
+  border-left: 3px solid var(--border-firm);
+  background: var(--surface-2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: .8rem 1rem;
+  margin: 1rem 0;
+}
+.callout > :last-child { margin-bottom: 0; }
+.callout.tip     { border-left-color: var(--accent); background: var(--accent-soft); }
+.callout.caution { border-left-color: var(--warn);   background: var(--warn-soft); }
+.callout.good    { border-left-color: var(--ok);     background: var(--ok-soft); }
+.callout.problem { border-left-color: var(--bad);    background: var(--bad-soft); }
+
+.banner {
+  margin-top: 1.25rem;
+  padding: .8rem 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
 }
 
-nav a:hover {
-  text-decoration: underline;
+.pill {
+  display: inline-block;
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  padding: .1rem .55rem;
+  border-radius: 999px;
+  font-size: .8rem;
+  font-weight: 550;
 }
 
-/* Group buttons in a row with spacing */
-.button-group {
-  display: flex;
-  flex-wrap: wrap;       /* wrap to next line if too many buttons */
-  gap: 1rem;             /* space between buttons */
-  margin-bottom: 2rem;   /* space below each section */
-}
+/* Status line used by the tool pages: neutral by default, coloured when the
+   page adds .ok / .bad alongside it. */
+.status { font-size: .925rem; color: var(--text-muted); min-height: 1.4em; }
+.status.ok  { color: var(--ok); }
+.status.bad { color: var(--bad); }
 
-/* Buttons will have equal sizing if you like */
-.button-group .button {
-  flex: 1 1 auto;        /* grow and shrink as needed */
-  min-width: 180px;      /* prevents buttons from getting too narrow */
-  text-align: center;
-}
+.controls { display: flex; gap: .625rem; align-items: center; flex-wrap: wrap; }
 
-/* Optional: secondary buttons (like the Instructions link in header) */
-.button.secondary {
-  background-color: #eee;
-  color: #333;
-  border: 1px solid #ccc;
-}
-.button.secondary:hover {
-  background-color: #ddd;
-}
+.small { font-size: .9rem; }
 
 .hidden { display: none; }
 
-#exportLatex .actions {
-  display: flex;
-  gap: .5rem;
-  margin-top: .5rem;
+/* ---------- small screens ---------------------------------------------- */
+
+@media (max-width: 600px) {
+  body { font-size: 15px; }
+  main { padding: 1.5rem 1rem 3rem; }
+  .card { padding: 1.15rem; border-radius: 8px; }
+  h1 { font-size: 1.45rem; }
+  .site-inner { padding: .55rem 1rem; gap: .5rem; }
+  header.site nav { margin-left: 0; width: 100%; }
 }
 
-#latexOutput {
-  width: 100%;
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-  white-space: pre;
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+  .tile:hover { transform: none; }
 }

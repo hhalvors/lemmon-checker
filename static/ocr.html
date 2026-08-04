@@ -2,30 +2,30 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>OCR → Pipe Proof</title>
   <link rel="stylesheet" href="/style.css" />
-  <style>
-    .card { max-width: 680px; margin: 1rem auto; }
-    .row  { display:flex; gap:.75rem; align-items:center; flex-wrap:wrap; }
-    .hint { color:#666; }
-    #preview { max-width:100%; max-height:320px; display:none; margin-top:.5rem; }
+  <style>#preview { max-width:100%; max-height:320px; display:none; margin-top:.5rem; }
     .status.ok  { color:#167d36; font-weight:600; }
     .status.bad { color:#b00020; font-weight:600; }
   </style>
 </head>
 <body>
-  <header><h1>OCR → Pipe Proof</h1></header>
-
-  <nav>
-    <a href="/">Home</a>
-    <a href="/proof">Proof Checker</a>
-    <a href="/model">Model Checker</a>
-    <a href="/prop">Truth Tables</a>
-    <a href="/prop/dnf">DNF</a>
-    <a href="/instructions">Instructions</a>
-  </nav>
-
-  <main>
+  <header class="site">
+  <div class="site-inner">
+    <a class="brand" href="/">Symbolic Logic Tools</a>
+    <nav>
+      <a href="/proof">Proof Checker</a>
+      <a href="/photo" aria-current="page">Photo</a>
+      <a href="/prop">Truth Tables</a>
+      <a href="/model">Model Checker</a>
+      <a href="/template">Template</a>
+      <a href="/instructions">Instructions</a>
+    </nav>
+  </div>
+</header>
+<main>
+    <h1 class="page-title">OCR → Pipe Proof</h1>
     <section class="card">
       <p class="hint">Upload a photo/scan of a handwritten (or typed) proof. We’ll OCR it with Mathpix and send the output to the Proof Checker for you to edit and run.</p>
 

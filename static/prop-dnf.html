@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>DNF Converter</title>
   <base href="/">
   <link rel="stylesheet" href="style.css" />
@@ -20,19 +21,21 @@
 
 </head>
 <body>
-  <header>
-    <h1>Disjunctive Normal Form (DNF)</h1>
-  </header>
-
-  <nav>
-    <a href="/">Home</a>
-    <a href="/proof">Proof Checker</a>
-    <a href="/model">Model Checker</a>
-    <a href="/prop">Truth Tables</a>
-    <a href="/instructions">Instructions</a>
-  </nav>
-
-  <main>
+  <header class="site">
+  <div class="site-inner">
+    <a class="brand" href="/">Symbolic Logic Tools</a>
+    <nav>
+      <a href="/proof">Proof Checker</a>
+      <a href="/photo">Photo</a>
+      <a href="/prop" aria-current="page">Truth Tables</a>
+      <a href="/model">Model Checker</a>
+      <a href="/template">Template</a>
+      <a href="/instructions">Instructions</a>
+    </nav>
+  </div>
+</header>
+<main>
+    <h1 class="page-title">Disjunctive Normal Form (DNF)</h1>
     <div class="row">
       <div class="card">
         <textarea id="sentence" placeholder="Example: (P → Q) ∨ R   or   (P -> Q) v R"></textarea>

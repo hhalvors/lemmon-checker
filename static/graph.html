@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Graphical Model Builder (relation R)</title>
   <link rel="stylesheet" href="/style.css" />
   <style>
@@ -9,29 +10,26 @@
     .card.tight { padding:0.75rem; }
     canvas { background:#fff; border-radius:12px; box-shadow:0 1px 12px rgba(0,0,0,.06); cursor:crosshair }
     .legend { display:flex; gap:.5rem; flex-wrap:wrap; font-size:.95rem; }
-    .legend .pill { font-size:.85rem; border:1px solid #ddd; padding:.15rem .5rem; border-radius:999px; background:#fafafa }
-    .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
-    .ok  { color:#167d36; font-weight:600; }
-    .bad { color:#b00020; font-weight:600; }
-    .model-view { font-size:.9rem; white-space:pre-wrap; max-width:520px; }
+.model-view { font-size:.9rem; white-space:pre-wrap; max-width:520px; }
     .toolbar { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
   </style>
 </head>
 <body>
-  <header>
-    <h1>Graphical Model Builder (relation <span class="mono">R</span>)</h1>
-  </header>
-
-  <nav>
-    <a href="/">Home</a>
-    <a href="/proof">Proof Checker</a>
-    <a href="/model">Model Checker</a>
-    <a href="/prop">Truth Tables</a>
-    <a href="/prop/dnf">DNF</a>
-    <a href="/instructions">Instructions</a>
-  </nav>
-
-  <main>
+  <header class="site">
+  <div class="site-inner">
+    <a class="brand" href="/">Symbolic Logic Tools</a>
+    <nav>
+      <a href="/proof">Proof Checker</a>
+      <a href="/photo">Photo</a>
+      <a href="/prop">Truth Tables</a>
+      <a href="/model" aria-current="page">Model Checker</a>
+      <a href="/template">Template</a>
+      <a href="/instructions">Instructions</a>
+    </nav>
+  </div>
+</header>
+<main>
+    <h1 class="page-title">Graphical Model Builder (relation <span class="mono">R</span>)</h1>
     <div class="board-wrap">
       <section class="card tight">
         <canvas id="board" width="680" height="480"></canvas>

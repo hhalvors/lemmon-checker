@@ -2,189 +2,173 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Instructions • Symbolic Logic Tools</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Instructions — Symbolic Logic Tools</title>
   <link rel="stylesheet" href="style.css" />
-  <style>
-    .container{max-width:1000px;margin:2rem auto;padding:1.25rem;background:#fff;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.06)}
-    h2{margin-top:1.25rem}
-    .tips{background:#f6f7fb;border:1px solid #e5e7f2;border-radius:10px;padding:1rem}
-    .grid {
-  display: flex;
-  flex-direction: column;  /* stack children vertically */
-  gap: 1rem;
-}
-     @media (min-width: 880px){ .grid{grid-template-columns: 1fr 1fr}}
-    code,kbd,pre{font-family: ui-monospace, Menlo, Consolas, monospace}
-    kbd{border:1px solid #ccd1e1;border-bottom-width:2px;border-radius:6px;padding:.1rem .35rem;background:#fff}
-    .mono{font-family: ui-monospace, Menlo, Consolas, monospace}
-    .muted{color:#667}
-    .small{font-size:.925rem}
-    .pill{display:inline-block;background:#eef2ff;border:1px solid #dbe1ff;color:#2a3; padding:.15rem .5rem;border-radius:999px;font-size:.85rem}
-    .tableish{overflow-x:auto}
-    table.shortcuts{width:100%;border-collapse:collapse;font-size:.95rem}
-    .shortcuts th,.shortcuts td{border:1px solid #e5e7f2;padding:.5rem .65rem;text-align:left}
-    .shortcuts th{background:#f8f9fe}
-  </style>
 </head>
 <body>
-
-  <header>
-    <h1>Instructions</h1>
+  <header class="site">
+    <div class="site-inner">
+      <a class="brand" href="/">Symbolic Logic Tools</a>
+      <nav>
+        <a href="/proof">Proof Checker</a>
+        <a href="/photo">Photo</a>
+        <a href="/prop">Truth Tables</a>
+        <a href="/model">Model Checker</a>
+        <a href="/template">Template</a>
+        <a href="/instructions" aria-current="page">Instructions</a>
+      </nav>
+    </div>
   </header>
 
-  <nav>
-    <a href="/">Home</a>
-    <a href="/proof">Proof Checker</a>
-    <a href="/model">Model Checker</a>
-    <a href="/prop">Truth Tables</a>
-    <a class="active" href="/instructions">Instructions</a>
-  </nav>
+  <main class="prose">
+    <h1 class="page-title">Instructions</h1>
+    <p class="page-intro">
+      Every tool here shares one syntax. You can type the logical symbols
+      directly, or use the ASCII shortcuts below and let the tools translate.
+    </p>
 
-  <main>
-    <div class="container">
-      <p class="muted small">
-        These tools share the same syntax normalizer. You can type
-        Unicode symbols (¬,∧,∨,→,∀,∃) or use the ASCII shortcuts
-        below. Variables can be any letters or alphanumerics
-        (e.g. <code>x,y,z,x1</code>).
+    <section class="card">
+      <h2 id="syntax" style="margin-top:0">Writing formulas</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Meaning</th><th>Symbol</th><th>You can also type</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>not</td><td class="mono">&#172;&#966;</td><td class="mono">~&#966; &nbsp; not &#966;</td></tr>
+            <tr><td>and</td><td class="mono">&#966; &#8743; &#968;</td><td class="mono">&#966; /\ &#968; &nbsp; &#966; &amp; &#968; &nbsp; &#966; and &#968;</td></tr>
+            <tr><td>or</td><td class="mono">&#966; &#8744; &#968;</td><td class="mono">&#966; \/ &#968; &nbsp; &#966; v &#968; &nbsp; &#966; or &#968;</td></tr>
+            <tr><td>if &hellip; then</td><td class="mono">&#966; &#8594; &#968;</td><td class="mono">&#966; -&gt; &#968; &nbsp; &#966; =&gt; &#968;</td></tr>
+            <tr><td>if and only if</td><td class="mono">&#966; &#8596; &#968;</td><td class="mono">&#966; &lt;-&gt; &#968;</td></tr>
+            <tr><td>every</td><td class="mono">&#8704;x &#966;</td><td class="mono">forall x &#966; &nbsp; Ax&#966;</td></tr>
+            <tr><td>some</td><td class="mono">&#8707;x &#966;</td><td class="mono">exists x &#966; &nbsp; Ex&#966;</td></tr>
+            <tr><td>predicates</td><td class="mono">Fx, Rxy</td><td>written straight after the letter</td></tr>
+            <tr><td>sentence letters</td><td class="mono">P, Q, R</td><td>predicates with no arguments</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="hint">
+        Spaces around operators are optional, and parentheses work as usual.
+        Variables may be any letter, optionally with a digit: <code>x</code>,
+        <code>y</code>, <code>x1</code>. The shorthands <code>Ax</code> and
+        <code>Ex</code> bind the single variable written straight after them.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2 id="proof" style="margin-top:0">Proof checker</h2>
+      <p>
+        This checks proofs in the style of
+        <a href="https://press.princeton.edu/books/paperback/9780691211954/how-logic-works"><em>How
+        Logic Works</em></a>. Write one step per line, with four columns
+        separated by a vertical bar: dependencies, line number, formula,
+        justification.
+      </p>
+<pre><code>1   | 1 | P     | A
+2   | 2 | Q     | A
+1,2 | 3 | P &amp; Q | 1,2 &amp;I</code></pre>
+      <p class="hint">
+        The columns need not line up. Leave the dependency column empty when a
+        line depends on nothing.
       </p>
 
-      <section id="shortcuts">
-        <h2>Common syntax & shortcuts</h2>
-        <div class="tableish">
-          <table class="shortcuts">
-            <thead>
-              <tr><th>Meaning</th><th>Unicode</th><th>ASCII you can type</th></tr>
-            </thead>
-            <tbody>
-              <tr><td>not</td><td class="mono">¬φ</td><td class="mono">~φ, not φ</td></tr>
-              <tr><td>and</td><td class="mono">φ ∧ ψ</td><td class="mono">φ /\ ψ, φ & ψ, φ and ψ</td></tr>
-              <tr><td>or</td><td class="mono">φ ∨ ψ</td><td class="mono">φ \/ ψ, φ v ψ, φ or ψ</td></tr>
-              <tr><td>implies</td><td class="mono">φ → ψ</td><td class="mono">φ -> ψ, φ => ψ</td></tr>
-              <tr><td>forall</td><td class="mono">∀x φ</td><td class="mono">forall x φ, Axφ</td></tr>
-              <tr><td>exists</td><td class="mono">∃x φ</td><td class="mono">exists x φ, Exφ</td></tr>
-              <tr><td>predicates</td><td class="mono">Rxy, F x</td><td class="mono">application by juxtaposition or parentheses</td></tr>
-              <tr><td>propositional constants</td><td class="mono">P, Q, R</td><td class="mono">treated as 0-ary predicates</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="small muted">
-          We also accept spaced forms such as <code>∀ x (Fx →
-          Gx)</code>. The shorthands <code>Ax</code>, <code>Ex</code>
-          bind a single variable character immediately after
-          the <code>A</code>/<code>E</code>.
-        </p>
-      </section>
-
-      <div class="grid">
-        <section id="proof">
-          <h2>Proof Checker</h2>
-          <p>This checker works for proofs in the style
-          of <a href="https://press.princeton.edu/books/paperback/9780691211954/how-logic-works"><i>How
-          Logic Works</i></a>. Paste a proof in pipe format, one step
-          per line. Each line should consist of four columns &ndash;
-          dependencies, line number, formula, justification &ndash;
-          separated by the pipe symbol "|". For example:</p>
-<pre><code>1 | 1 | P | A
-2 | 2 | Q | A
-1,2 | 3 | P &amp; Q | 1,2 &amp;I
-</code></pre> The columns don't need to be aligned.
-
-<section id="rules">
-  <h3>Permissible rules</h3>
-  <ul class="small">
-    <li><strong>A</strong> — Assumption</li>
-    <li><strong>MP</strong> — Modus Ponens</li>
-    <li><strong>MT</strong> — Modus Tollens</li>
-    <li><strong>DN</strong> — Double Negation</li>
-    <li><strong>CP</strong> — Conditional Proof</li>
-    <li><strong>∧I / &amp;I</strong> — And-Introduction</li>
-    <li><strong>∧E / &amp;E</strong> — And-Elimination</li>
-    <li><strong>vI</strong> — Or-Introduction</li>
-    <li><strong>vE</strong> — Or-Elimination</li>
-    <li><strong>∀E / UI</strong> — Universal Elimination</li>
-    <li><strong>∀I / UE</strong> — Universal Introduction</li>
-    <li><strong>∃I / EI</strong> — Existential Introduction</li>
-    <li><strong>∃E / EE</strong> — Existential Elimination</li>
-    <li><strong>RAA</strong> — Reductio ad Absurdum</li>
-    <li><strong>=I</strong> — Equality Introduction</li>
-    <li><strong>=E</strong> — Equality Elimination</li>
-    <li><strong>prop taut</strong> - Propositional Tautology</li>
-  </ul>
-  <p>The last rule validates any formula that is a Boolean consequence
-  of <var>n</var> other lines. For example:
-<pre><code>1   | 1 | AxFx v EyGy  | A
-2   | 2 | ~AxFx        | A
-1,2 | 3 | EyGy         | 1,2 prop taut
-</code></pre></p>
-</section>
-	  
-          <p><a href="/proof">Open the Proof Checker →</a></p>
-        </section>
-
-        <section id="model">
-          <h2>Model Checker</h2>
-          <p>Build a finite structure and evaluate a closed sentence in it.</p>
-          <div class="tips small">
-            <ul>
-              <li><strong>Domain</strong>: comma-separated elements (e.g. <code>a,b,c</code>).</li>
-              <li><strong>Constants</strong>: map to elements
-              (e.g. <code>c = a</code>).</li>
-              <li><strong>Symbols</strong>: add rows with a name, an arity (0–3), and an extension:
-                <ul>
-                  <li>Arity 0: <code>T</code> or <code>F</code> (propositional constant).</li>
-                  <li>Arity 1: list of elements (e.g. <code>a,b</code>).</li>
-                  <li>Arity 2–3: tuples in angle brackets (e.g. <code>&lt;a,b&gt;</code>, <code>&lt;a,b,c&gt;</code>).</li>
-                </ul>
-              </li>
-              <li>Uninterpreted symbols produce a clear error (no
-              “guessing”).</li>
-            </ul>
-          </div>
-<pre><code>Example sentence:
-Ax (Fx -> ∃y Rxy)
-</code></pre>
-          <p><a href="/model">Open the Model Checker →</a></p>
-        </section>
+      <h3 id="rules">Rules</h3>
+      <p class="hint">
+        Rule names are not case-sensitive, so <code>cp</code> and
+        <code>CP</code> both work.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Rule</th><th>Name</th><th>Also accepted</th><th>Lines cited</th></tr>
+          </thead>
+          <tbody>
+        <tr><td class="mono"><strong>A</strong></td><td>Assumption</td><td class="mono faint">Assumption</td><td>—</td></tr>
+        <tr><td class="mono"><strong>MP</strong></td><td>Modus Ponens</td><td class="mono faint">—</td><td>2</td></tr>
+        <tr><td class="mono"><strong>MT</strong></td><td>Modus Tollens</td><td class="mono faint">—</td><td>2</td></tr>
+        <tr><td class="mono"><strong>DN</strong></td><td>Double Negation</td><td class="mono faint">—</td><td>1</td></tr>
+        <tr><td class="mono"><strong>CP</strong></td><td>Conditional Proof</td><td class="mono faint">—</td><td>2</td></tr>
+        <tr><td class="mono"><strong>∧I</strong></td><td>And-Introduction</td><td class="mono faint">&I, ANDI, /\\I</td><td>2</td></tr>
+        <tr><td class="mono"><strong>∧E</strong></td><td>And-Elimination</td><td class="mono faint">&E, ANDE, /\\E</td><td>1</td></tr>
+        <tr><td class="mono"><strong>∨I</strong></td><td>Or-Introduction</td><td class="mono faint">vI, \\/I, ORI</td><td>1</td></tr>
+        <tr><td class="mono"><strong>∨E</strong></td><td>Or-Elimination</td><td class="mono faint">vE, \\/E, ORE</td><td>5</td></tr>
+        <tr><td class="mono"><strong>RAA</strong></td><td>Reductio ad Absurdum</td><td class="mono faint">RA, ¬I, ~I</td><td>2</td></tr>
+        <tr><td class="mono"><strong>↔I</strong></td><td>Biconditional Introduction</td><td class="mono faint"><->I, IFFI, BIDI</td><td>2</td></tr>
+        <tr><td class="mono"><strong>↔E</strong></td><td>Biconditional Elimination</td><td class="mono faint"><->E, IFFE, BIDE</td><td>2</td></tr>
+        <tr><td class="mono"><strong>∀E</strong></td><td>Universal Elimination</td><td class="mono faint">UE, ForallE</td><td>1</td></tr>
+        <tr><td class="mono"><strong>∀I</strong></td><td>Universal Introduction</td><td class="mono faint">UI, ForallI</td><td>1</td></tr>
+        <tr><td class="mono"><strong>∃I</strong></td><td>Existential Introduction</td><td class="mono faint">EI, ExistsI</td><td>1</td></tr>
+        <tr><td class="mono"><strong>∃E</strong></td><td>Existential Elimination</td><td class="mono faint">EE, ExistsE</td><td>3</td></tr>
+        <tr><td class="mono"><strong>QN</strong></td><td>Quantifier Negation</td><td class="mono faint">—</td><td>1</td></tr>
+        <tr><td class="mono"><strong>=I</strong></td><td>Identity Introduction</td><td class="mono faint">—</td><td>—</td></tr>
+        <tr><td class="mono"><strong>=E</strong></td><td>Identity Elimination</td><td class="mono faint">—</td><td>2</td></tr>
+        <tr><td class="mono"><strong>LEM</strong></td><td>Law of Excluded Middle</td><td class="mono faint">—</td><td>—</td></tr>
+        <tr><td class="mono"><strong>prop taut</strong></td><td>Propositional Tautology</td><td class="mono faint">—</td><td>any number</td></tr>
+          </tbody>
+        </table>
       </div>
 
-      <section id="prop">
-        <h2>Truth Tables</h2>
-        <p>Enter a purely propositional sentence (only 0-ary symbols
-        like <code>P, Q, R</code>—no predicates with arguments). The
-        tool generates all valuations and the truth value of the
-        sentence.</p>
-<pre><code>(P -> Q) v R
-~(P &amp; Q) -> (Q v R)
-</code></pre>
-        <div class="tips small">
-          <ul>
-            <li>If a non-propositional symbol is detected, you’ll get a “non_propositional” error.</li>
-            <li>The table header shows the pretty-printed sentence instead of “Value”.</li>
-            <li>ASCII forms like <code>-></code>, <code>~</code>, <code>/\</code>, <code>\/</code>, and words “and/or/not” all work.</li>
-          </ul>
-        </div>
-        <p><a href="/prop">Open the Truth-Table tool →</a></p>
-      </section>
+      <p>
+        <strong>Propositional tautology</strong> accepts any formula that
+        follows truth-functionally from the lines it cites:
+      </p>
+<pre><code>1   | 1 | AxFx v EyGy | A
+2   | 2 | ~AxFx       | A
+1,2 | 3 | EyGy        | 1,2 prop taut</code></pre>
 
-      <section id="faq">
-        <h2>FAQ / Tips</h2>
-        <ul class="small">
-          <li><strong>Variables:</strong> you can
-          use <code>x,y,z,x1</code>, etc. Quantifiers bind one
-          variable at a time.</li>
-          <li><strong>Spacing:</strong> spaces around operators are optional. Parentheses work as usual.</li>
-          <li><strong>Shorthands:</strong> prefer <code>Ax</code>, <code>Ex</code> for speed; they normalize to <code>∀x</code>, <code>∃x</code>.</li>
-          <li><strong>Errors:</strong> messages reference the normalized input (post-shortcut), so your ASCII is translated first.</li>
-        </ul>
-      </section>
-    </div>
+      <div class="callout tip">
+        <p style="margin:0">
+          Working on paper? <a href="/template">Print the proof template</a>,
+          then <a href="/photo">photograph your proof</a> and have it read and
+          checked for you.
+        </p>
+      </div>
+
+      <p><a href="/proof">Open the proof checker &rarr;</a></p>
+    </section>
+
+    <section class="card">
+      <h2 id="model" style="margin-top:0">Model checker</h2>
+      <p>Build a finite structure and evaluate a closed sentence in it.</p>
+      <ul>
+        <li><strong>Domain</strong> &mdash; comma-separated elements, such as <code>a,b,c</code>.</li>
+        <li><strong>Constants</strong> &mdash; each maps to an element, such as <code>c = a</code>.</li>
+        <li><strong>Symbols</strong> &mdash; a name, an arity from 0 to 3, and an extension:
+          <ul>
+            <li>arity 0: <code>T</code> or <code>F</code>;</li>
+            <li>arity 1: a list of elements, such as <code>a,b</code>;</li>
+            <li>arity 2 or 3: tuples, such as <code>&lt;a,b&gt;</code>.</li>
+          </ul>
+        </li>
+      </ul>
+      <p class="hint">
+        A symbol you have not interpreted produces a clear error rather than a
+        guess.
+      </p>
+<pre><code>Ax (Fx -&gt; Ey Rxy)</code></pre>
+      <p><a href="/model">Open the model checker &rarr;</a></p>
+    </section>
+
+    <section class="card">
+      <h2 id="prop" style="margin-top:0">Truth tables</h2>
+      <p>
+        Enter a purely propositional sentence &mdash; sentence letters only, no
+        predicates with arguments. The tool lists every valuation and the value
+        of the sentence under each.
+      </p>
+<pre><code>(P -&gt; Q) v R
+~(P &amp; Q) -&gt; (Q v R)</code></pre>
+      <p class="hint">
+        A predicate with arguments produces a
+        <code>non_propositional</code> error. The
+        <a href="/prop/dnf">DNF converter</a> rewrites a sentence in
+        disjunctive normal form.
+      </p>
+      <p><a href="/prop">Open the truth-table tool &rarr;</a></p>
+    </section>
   </main>
 
-  <footer>
-    &copy; 2025 Symbolic Logic Tools
-  </footer>
+  <footer>&copy; 2025 Symbolic Logic Tools</footer>
 </body>
 </html>
-

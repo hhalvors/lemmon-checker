@@ -2,27 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Model Checker</title>
   <link rel="stylesheet" href="style.css" />
   <style>
     /* --- minimal page-local styles --- */
-    main { max-width: 1100px; margin: 0 auto; padding: 0 .75rem; }
-
-    .card { background:#fff; border-radius:12px; box-shadow:0 1px 12px rgba(0,0,0,.06);
-            padding:1rem; margin:1rem 0; }
-
-    .two { display:grid; gap:1rem; }
+.two { display:grid; gap:1rem; }
     @media (min-width: 960px) { .two { grid-template-columns: 1fr 1fr; } }
 
     h2 { margin:0 0 .5rem; }
-    .muted { color:#6b7280; }
-
-    input[type="text"], textarea {
-      width:100%; box-sizing:border-box;
-      font-size:1rem; padding:.6rem .75rem;
-      border:1px solid #cfcfd4; border-radius:.5rem;
-    }
-    textarea#sentence { min-height:8rem; font-family:ui-monospace, Menlo, Consolas, monospace; }
+textarea#sentence { min-height:8rem; font-family:ui-monospace, Menlo, Consolas, monospace; }
 
     .grid-row { display:grid; gap:.5rem; align-items:center; }
     /* constants: [const] [denotes] [−] */
@@ -51,17 +40,21 @@
   </style>
 </head>
 <body>
-  <header><h1>Model Checker</h1></header>
-
-  <nav>
-    <a href="/">Home</a>
-    <a href="/proof">Proof Checker</a>
-    <a href="/model">Model Checker</a>
-    <a href="/prop">Truth Tables</a>
-    <a href="/instructions">Instructions</a>
-  </nav>
-
-  <main>
+  <header class="site">
+  <div class="site-inner">
+    <a class="brand" href="/">Symbolic Logic Tools</a>
+    <nav>
+      <a href="/proof">Proof Checker</a>
+      <a href="/photo">Photo</a>
+      <a href="/prop">Truth Tables</a>
+      <a href="/model" aria-current="page">Model Checker</a>
+      <a href="/template">Template</a>
+      <a href="/instructions">Instructions</a>
+    </nav>
+  </div>
+</header>
+<main>
+    <h1 class="page-title">Model Checker</h1>
     <div class="two">
       <!-- Left: domain + constants -->
       <section class="card">

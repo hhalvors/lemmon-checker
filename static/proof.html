@@ -2,39 +2,32 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Proof Checker</title>
   <link rel="stylesheet" href="style.css" />
   <style>
     /* Page-specific tweaks on top of style.css */
-    .card{max-width:1200px;margin:1.25rem auto;padding:1.25rem}
-    form#proofForm .row{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}
+form#proofForm .row{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}
     form#proofForm label{font-weight:700}
     #proofText{width:100%;min-height:14rem;resize:vertical}
-    .actions{margin-top:.75rem;display:flex;gap:.75rem;align-items:center}
-    table{width:100%;border-collapse:collapse;margin-top:1rem}
-    th,td{padding:.5rem .6rem;border-top:1px solid #eee;vertical-align:top}
-    th{background:#fafafa;text-align:left}
-    .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
-    .ok{color:#167d36;font-weight:600}
-    .bad{color:#b00020;font-weight:600}
-    .hint{opacity:.75}
-    .spacer{flex:1}
-  </style>
+</style>
 </head>
 <body>
-  <header>
-    <h1>Proof Checker</h1>
-  </header>
-
-  <nav>
-    <a href="/">Home</a>
-    <a href="/proof" aria-current="page">Proof Checker</a>
-    <a href="/model">Model Checker</a>
-    <a href="/prop">Truth Tables</a>
-    <a href="/instructions">Instructions</a>
-  </nav>
-
-  <main>
+  <header class="site">
+  <div class="site-inner">
+    <a class="brand" href="/">Symbolic Logic Tools</a>
+    <nav>
+      <a href="/proof" aria-current="page">Proof Checker</a>
+      <a href="/photo">Photo</a>
+      <a href="/prop">Truth Tables</a>
+      <a href="/model">Model Checker</a>
+      <a href="/template">Template</a>
+      <a href="/instructions">Instructions</a>
+    </nav>
+  </div>
+</header>
+<main>
+    <h1 class="page-title">Proof Checker</h1>
     <section class="card">
       <form id="proofForm" autocomplete="off">
 
