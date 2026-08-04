@@ -31,7 +31,7 @@ ppJust j = case j of
   LEM            -> "LEM"
   ForallElim i         -> one "∀E" i
   ExistsIntro i        -> one "∃I" i
-  ForallIntro i _x     -> one "∀I" i
+  ForallIntro i        -> one "∀I" i
   ExistsElim m m1 n    -> list "∃E" [m,m1,n]
   where
     one tag i         = show i <> " " <> tag

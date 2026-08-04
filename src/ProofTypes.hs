@@ -5,6 +5,7 @@ module ProofTypes
   ( Term(..)
   , PredFormula(..)
   , Justification(..)
+  , citedLines
   , ProofLine(..)
   , Proof(..)
   , substFree
@@ -77,6 +78,38 @@ data Justification
 
 instance FromJSON Justification
 instance ToJSON Justification
+
+-- | Every line number cited by a justification.
+--
+-- This is the single source of truth for "which lines does this rule appeal
+-- to?", and is used to enforce that a proof only ever reasons forwards (see
+-- 'LemmonChecker.checkStructure'). If you add a rule to 'Justification', add
+-- it here too — the case is deliberately exhaustive so that -Wall will flag
+-- the omission rather than silently reporting no citations.
+citedLines :: Justification -> [Int]
+citedLines j =
+  case j of
+    Assumption            -> []
+    MP m n                -> [m, n]
+    MT m n                -> [m, n]
+    DN m                  -> [m]
+    CP m n                -> [m, n]
+    AndIntro m n          -> [m, n]
+    AndElim m             -> [m]
+    OrIntro m             -> [m]
+    OrElim d a1 c1 a2 c2  -> [d, a1, c1, a2, c2]
+    RAA m n               -> [m, n]
+    ForallElim m          -> [m]
+    ExistsIntro m         -> [m]
+    ForallIntro m         -> [m]
+    ExistsElim m a n      -> [m, a, n]
+    EqIntro               -> []
+    EqElim m n            -> [m, n]
+    LEM                   -> []
+    PropTaut ms           -> ms
+    IffIntro m n          -> [m, n]
+    IffElim m n           -> [m, n]
+    QN m                  -> [m]
 
 -- One line of a proof
 data ProofLine = ProofLine

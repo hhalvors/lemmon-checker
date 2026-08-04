@@ -11,6 +11,7 @@ import           FormulaParser               (parseFormula)
 
 import qualified Data.Set                   as S
 import           Data.Char                   (isDigit, isSpace, toUpper)
+import           Data.List                   (intercalate)
 import           Data.List.Split             (splitOneOf, splitOn)
 
 import Normalize (normalizeFormula)
@@ -127,6 +128,21 @@ normalizeRule raw =
 
     other         -> other
 
+-- | The variables bound by a formula's leading run of universal quantifiers.
+-- ∀x∀y φ ↦ ["x","y"]; anything not starting with ∀ ↦ [].
+forallPrefixVars :: PredFormula -> [String]
+forallPrefixVars (ForAll x body) = x : forallPrefixVars body
+forallPrefixVars _               = []
+
+-- | "x", or "x and y", or "x, y and z" — for error messages.
+describeVars :: [String] -> String
+describeVars vs =
+  case map (\v -> "\"" ++ v ++ "\"") vs of
+    []     -> ""
+    [a]    -> a
+    [a,b]  -> a ++ " and " ++ b
+    xs     -> intercalate ", " (init xs) ++ " and " ++ last xs
+
 parseJustification :: PredFormula -> String -> Either String Justification
 parseJustification phi raw0 =
   let raw   = trim raw0
@@ -198,11 +214,27 @@ parseJustification phi raw0 =
            other -> Left $ "Unknown rule: " ++ other
 
        -- "<m> ∀I x" (explicit variable still accepted)
+       --
+       -- ForallIntro carries only the cited line: the variable being
+       -- generalised is recoverable from the goal's ∀-prefix. The variable is
+       -- therefore not needed, but when a student does write one we check it
+       -- rather than discard it, so that "5 ∀I y" against a goal of ∀x(...)
+       -- is reported instead of silently ignored.
        [numsTxt, ruleTxt, varTxt] -> do
          ns <- readInts numsTxt
          case normalizeRule ruleTxt of
-           "∀I" -> case ns of [m] -> Right (ForallIntro m)
-                              _    -> Left "∀I needs exactly one ref (m) and a variable x"
+           "∀I" ->
+             case ns of
+               [m] ->
+                 case forallPrefixVars phi of
+                   [] -> Left "∀I: target line must be ∀x φ to infer x"
+                   vs | varTxt `elem` vs -> Right (ForallIntro m)
+                      | otherwise ->
+                          Left $ "∀I: cited variable \"" ++ varTxt
+                              ++ "\" is not bound by the goal, which generalises "
+                              ++ describeVars vs
+                              ++ ". Either name one of those, or drop the variable."
+               _ -> Left "∀I needs exactly one ref (m) and a variable x"
            other -> Left $ "Unexpected trailing token for rule " ++ other
 
        _ -> Left $ "Bad justification format (need \"<nums> <RULE>\" or \"<m> ∀I x\"): " ++ raw

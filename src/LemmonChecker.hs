@@ -139,8 +139,50 @@ mpExpected l1 l2 =
     _ ->
       Left "The first cited line of MP must be a conditional."
 
+-- | Structural well-formedness of a line, checked *before* its rule is
+-- applied. These conditions are what make the line-by-line rule checks add up
+-- to a proof: without them a "proof" can be locally correct at every line and
+-- still be circular.
+--
+--   (1) Line numbers must be unique. 'findLine' resolves a citation with
+--       'lookup', which silently takes the first match, so duplicates would
+--       let a later line masquerade as an earlier one.
+--
+--   (2) Every cited line must come strictly earlier. Citing a later line (or
+--       the line itself) closes a loop: each line is then justified by the
+--       others, with nothing grounding the cycle. For example
+--
+--           ∅|1|P|2 ∧E
+--           ∅|2|P∧P|1,1 ∧I
+--
+--       passes every individual rule check — line 1 is a genuine ∧E of line 2
+--       and line 2 a genuine ∧I from line 1 — yet it "proves" P from no
+--       assumptions at all.
+checkStructure :: Proof -> ProofLine -> Either String ()
+checkStructure proof line =
+  let n     = lineNumber line
+      dupes = length [ () | l <- proof, lineNumber l == n ]
+      late  = [ m | m <- citedLines (justification line), m >= n ]
+  in if dupes > 1
+       then Left $ "❌ Line number " ++ show n ++ " is used "
+                ++ show dupes ++ " times. Line numbers must be unique."
+     else if not (null late)
+       then Left $ "❌ Line " ++ show n ++ " cites "
+                ++ (if length late == 1 then "line " else "lines ")
+                ++ intercalate ", " (map show late)
+                ++ ", which "
+                ++ (if length late == 1 then "does" else "do")
+                ++ " not come earlier in the proof. "
+                ++ "Every rule must appeal only to lines already established."
+     else Right ()
+
 checkLine :: Proof -> ProofLine -> Either String ()
-checkLine proof line =
+checkLine proof line = do
+  checkStructure proof line
+  checkJustification proof line
+
+checkJustification :: Proof -> ProofLine -> Either String ()
+checkJustification proof line =
   case justification line of
 
     Assumption ->
@@ -215,6 +257,39 @@ checkLine proof line =
                     Left $ "❌ DN requires φ and ¬¬φ on one of the lines (either direction) at line " ++ show (lineNumber line)
         Nothing ->
             Left $ "❌ DN refers to missing line " ++ show m
+
+    AndIntro m n ->
+      case (findLine m, findLine n) of
+        (Just l1, Just l2) ->
+          let phi          = formula l1
+              psi          = formula l2
+              goal         = formula line
+              expected     = And phi psi
+              -- The cited order fixes the order of the conjuncts: ∧I from
+              -- lines m,n yields φ∧ψ, not ψ∧φ. If the student wrote the
+              -- conjuncts the other way round, say so rather than just
+              -- reporting a mismatch.
+              swapped      = goal == And psi phi
+              depsExpected = Set.union (references l1) (references l2)
+          in if goal /= expected
+               then Left $ "❌ Invalid ∧ Intro at line " ++ show (lineNumber line)
+                        ++ ": expected " ++ renderFormula expected
+                        ++ " but got " ++ renderFormula goal ++ "."
+                        ++ (if swapped
+                              then " (The conjuncts appear in the opposite order"
+                                   ++ " from the cited lines — either swap them"
+                                   ++ " or cite " ++ show n ++ "," ++ show m
+                                   ++ " instead.)"
+                              else "")
+             else if references line /= depsExpected
+               then Left $ "❌ ∧ Intro at line " ++ show (lineNumber line)
+                        ++ ": dependencies must be the union of the cited lines'"
+                        ++ " dependencies. Expected "
+                        ++ show (Set.toList depsExpected)
+                        ++ ", got " ++ show (Set.toList (references line)) ++ "."
+             else Right ()
+        _ -> Left $ "❌ ∧ Intro at line " ++ show (lineNumber line)
+                 ++ " refers to missing line(s) " ++ show m ++ " or " ++ show n ++ "."
 
     AndElim m ->
       case findLine m of
@@ -792,10 +867,13 @@ checkLine proof line =
 
             _ -> Left "❌ =E: second cited line must be an equality between constants a=b."
 
-        _ -> Left "❌ =E: refers to missing line(s)."      
+        _ -> Left "❌ =E: refers to missing line(s)."
 
-    _ -> Right ()
-
+  -- NOTE: there is deliberately no catch-all case here. Every constructor of
+  -- 'Justification' must be handled explicitly. A wildcard would make an
+  -- unimplemented rule fail *open* — silently accepting any line that used it,
+  -- which is how ∧I went unchecked. With the match exhaustive, -Wall reports
+  -- any rule added to 'Justification' but not checked here.
   where
     findLine k = lookup k [(lineNumber l, l) | l <- proof]
 

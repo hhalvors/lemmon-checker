@@ -4,7 +4,11 @@ version:             0.1.0.0
 build-type:          Simple
 
 library
-  hs-source-dirs:      src      
+  hs-source-dirs:      src
+  -- -Wall on the library is what makes the exhaustive case in
+  -- LemmonChecker.checkJustification enforceable: a rule added to
+  -- Justification but not checked shows up as an incomplete-pattern warning.
+  ghc-options:         -Wall
   exposed-modules:
       ProofTypes
       LemmonChecker
