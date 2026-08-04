@@ -469,13 +469,37 @@ retrying n act = do
     Left _ | n <= 1      -> pure r
            | otherwise   -> threadDelay 1000000 >> retrying (n - 1) act
 
-callAnthropic :: String -> T.Text -> T.Text -> String -> IO (Either String A.Value)
+-- | Assemble the reply from a stream of server-sent events.
+--
+-- Streaming is not for progressive display here -- we still wait for the whole
+-- reply. It is to keep bytes moving. A non-streamed request sits silent for
+-- twenty-odd seconds while the model reads the page, and something between
+-- this host and the API closes connections that go quiet for that long. With
+-- streaming, deltas arrive continuously and the connection is never idle.
+assembleSSE :: L8.ByteString -> String
+assembleSSE body =
+  concat [ T.unpack t
+         | line <- L8.lines body
+         , L8.isPrefixOf "data: " line
+         , Just v <- [A.decode (L8.drop 6 line) :: Maybe A.Value]
+         , Just t <- [deltaText v]
+         ]
+  where
+    deltaText (A.Object o)
+      | Just (A.String "content_block_delta") <- KM.lookup "type" o
+      , Just (A.Object d) <- KM.lookup "delta" o
+      , Just (A.String t) <- KM.lookup "text" d
+      = Just t
+    deltaText _ = Nothing
+
+callAnthropic :: String -> T.Text -> T.Text -> String -> IO (Either String String)
 callAnthropic rawKey media b64 promptText = do
   let apiKey = trimKey rawKey
   initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
   let payload = A.object
         [ "model"      .= ("claude-sonnet-5" :: String)
         , "max_tokens" .= (8000 :: Int)
+        , "stream"     .= True
           -- Transcription is perception, not reasoning. Left enabled, thinking
           -- can consume the whole budget on a dense page and emit no text.
         , "thinking"   .= A.object [ "type" .= ("disabled" :: String) ]
@@ -529,7 +553,7 @@ callAnthropic rawKey media b64 promptText = do
                     ++ ": " ++ take 400 (L8.unpack bodyL))
           pure (Left ("The transcription service returned HTTP " ++ show code
                       ++ ". " ++ take 200 (L8.unpack bodyL)))
-        else pure (A.eitherDecode' bodyL)
+        else pure (Right (assembleSSE bodyL))
 
 collectTexts :: A.Value -> [T.Text]
 collectTexts (A.Object o) =
@@ -937,7 +961,7 @@ main = do
                             [ "status" .= ("upstream_error" :: String)
                             , "error"  .= decErr ]
                         Right v -> do
-                          let pipe0 = pipeRowsOf (responseText v)
+                          let pipe0 = pipeRowsOf v
                           -- The parser is the validator. If the transcription
                           -- will not parse, show the model its own error and
                           -- let it look at the photograph once more.
@@ -954,7 +978,7 @@ main = do
                                          callAnthropic apiKey media b64 note
                               pure $ case again of
                                 Right v2 ->
-                                  let p2 = pipeRowsOf (responseText v2)
+                                  let p2 = pipeRowsOf v2
                                   in if null p2 then pipe0 else p2
                                 Left _ -> pipe0
                           if null pipe
