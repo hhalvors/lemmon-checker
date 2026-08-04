@@ -342,6 +342,27 @@ redact = go
               || (ch >= 'A' && ch <= 'Z')
               || (ch >= '0' && ch <= '9')
 
+-- | The smallest possible real request to the Messages API: no image, a
+-- handful of tokens. Returns the HTTP status, or the failure.
+tinyAnthropicCall :: String -> IO (Either String Int)
+tinyAnthropicCall rawKey = do
+  initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
+  let payload = A.object
+        [ "model"      .= ("claude-sonnet-5" :: String)
+        , "max_tokens" .= (4 :: Int)
+        , "messages"   .= [ A.object [ "role" .= ("user" :: String)
+                                     , "content" .= ("hi" :: String) ] ]
+        ]
+      req = setRequestBodyLBS (A.encode payload)
+          $ setRequestHeader "content-type"      ["application/json"]
+          $ setRequestHeader "x-api-key"         [BS.pack (trimKey rawKey)]
+          $ setRequestHeader "anthropic-version" ["2023-06-01"]
+          $ initReq { HC.responseTimeout = HC.responseTimeoutMicro (60 * 1000000) }
+  outcome <- try (httpLBS req)
+  pure $ case outcome of
+    Left e     -> Left (flatten (redact (displayException (e :: SomeException))))
+    Right resp -> Right (getResponseStatusCode resp)
+
 -- | Run an action, retrying a failure a few times with a short pause.
 retrying :: Int -> IO (Either SomeException a) -> IO (Either SomeException a)
 retrying n act = do
@@ -714,6 +735,33 @@ main = do
       setHeader "Content-Type" "application/pdf"
       setHeader "Content-Disposition" "inline; filename=\"proof-template.pdf\""
       file "static/template.pdf"
+
+    -- Does this server reach the Anthropic API at all?
+    --
+    -- The transcription request carries several hundred kilobytes of image.
+    -- If a tiny request to the same endpoint succeeds while the real one
+    -- fails, the connection is fine and the payload size is the problem --
+    -- a path-MTU or egress limit rather than anything in this code. If both
+    -- fail, the host cannot reach the API and the size is irrelevant. There
+    -- is no way to tell those apart from the outside, hence this route.
+    get "/transcribe/selftest" $ do
+      mKey <- liftAndCatchIO $ lookupEnv "ANTHROPIC_API_KEY"
+      case mKey of
+        Nothing -> json $ object
+          [ "status" .= ("no_key" :: String)
+          , "error"  .= ("ANTHROPIC_API_KEY is not set." :: String) ]
+        Just k -> do
+          r <- liftAndCatchIO $ tinyAnthropicCall k
+          case r of
+            Left e  -> do
+              status status502
+              json $ object [ "status" .= ("failed" :: String), "error" .= e ]
+            Right c -> json $ object
+              [ "status"    .= ("ok" :: String)
+              , "httpStatus" .= c
+              , "note" .= ("A small request reached the API. If photographs \
+                           \still fail, the problem is the size of the upload, \
+                           \not the connection." :: String) ]
 
     -- Photograph a proof, confirm the transcription, then check it
     get "/photo" $ file "static/photo.html"
