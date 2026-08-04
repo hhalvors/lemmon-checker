@@ -83,6 +83,12 @@ justification
     ∃I, ANDI for ∧I, v for ∨. Map those to the canonical forms above. That is
     the only normalising you should do.
 
+START AT ROW (1). The first data row sits immediately below the shaded header
+band, and its Depends cell is often a single small digit close to that band.
+It is easy to mistake for part of the header. It is not: read it. Every output
+row must have a line number, and the rows you output must be consecutive
+starting from 1.
+
 TRANSCRIBE EXACTLY WHAT IS WRITTEN, INCLUDING MISTAKES. This transcription is
 fed to a proof checker that reports errors back to the student. If a
 justification looks wrong for the formula on that row, or a dependency set
@@ -116,10 +122,18 @@ def encode_image(path: Path) -> tuple[str, str]:
     return "image/jpeg", base64.b64encode(buf.getvalue()).decode()
 
 
-def build_request(media_type: str, b64: str, model: str) -> dict:
+def build_request(media_type: str, b64: str, model: str, feedback: str = "") -> dict:
+    text = PROMPT
+    if feedback:
+        text += (
+            "\n\nYour previous attempt at this image had the following "
+            "problems. Look at the image again and correct them. Do not invent "
+            "content to satisfy these notes — if a cell really is blank, leave "
+            "it blank.\n\n" + feedback
+        )
     return {
         "model": model,
-        "max_tokens": 2048,
+        "max_tokens": 4096,
         "messages": [
             {
                 "role": "user",
@@ -132,11 +146,81 @@ def build_request(media_type: str, b64: str, model: str) -> dict:
                             "data": b64,
                         },
                     },
-                    {"type": "text", "text": PROMPT},
+                    {"type": "text", "text": text},
                 ],
             }
         ],
     }
+
+
+# Canonical rule tokens, matching ruleAliases in src/PipeParse.hs.
+RULE_TOKENS = {
+    "A", "MP", "MT", "DN", "CP", "∧I", "∧E", "∨I", "∨E", "RAA",
+    "∀E", "∀I", "∃I", "∃E", "↔I", "↔E", "QN", "=I", "=E", "LEM", "prop taut",
+}
+
+
+def rule_of(just: str) -> str:
+    j = just.strip()
+    if j.endswith("prop taut"):
+        return "prop taut"
+    parts = j.split()
+    return parts[-1] if parts else ""
+
+
+def validate(pipe: str) -> list[str]:
+    """Problems worth a second look at the image.
+
+    These are the failures actually seen on the corpus: a dropped first row, a
+    blank line-number cell, and an invented rule name ("IMP" for MP). All three
+    are detectable here, before the transcription reaches the checker, and all
+    three are worth one more look at the photograph.
+    """
+    problems: list[str] = []
+    rows = [r for r in pipe.strip().split("\n") if r.strip()]
+    nums: list[int] = []
+    for i, row in enumerate(rows, 1):
+        cols = row.split("|")
+        if len(cols) != 4:
+            problems.append(f"row {i}: has {len(cols)} columns, expected 4")
+            continue
+        deps, ln, formula, just = (c.strip() for c in cols)
+        # An assumption always rests on itself, so a blank Depends cell on a
+        # row justified "A" means the digit was missed — this is where every
+        # dropped first row in the corpus showed up. Flagging it prompts
+        # another look at the photograph; it does not fill the cell in. If the
+        # cell really is blank the student has made a mistake, and the checker
+        # must be allowed to say so.
+        if just.strip() == "A" and not deps and ln.isdigit():
+            problems.append(
+                f"row {i}: line {ln} is an assumption but its Depends cell is "
+                f"empty; an assumption depends on its own line, so check "
+                f"whether there is a digit there that was missed"
+            )
+        if not ln.isdigit():
+            problems.append(
+                f"row {i}: the line-number cell is {ln!r}; it must be the "
+                f"pre-printed digits from the (Line) column"
+            )
+        else:
+            nums.append(int(ln))
+        if not formula:
+            problems.append(f"row {i}: the formula cell is empty")
+        tok = rule_of(just)
+        if tok not in RULE_TOKENS:
+            problems.append(
+                f"row {i}: {tok!r} is not one of the allowed justifications"
+            )
+    if nums:
+        if nums[0] != 1:
+            problems.append(
+                f"the first row transcribed is line {nums[0]}, but the table "
+                f"starts at line (1) — check whether you skipped the first row"
+            )
+        expected = list(range(nums[0], nums[0] + len(nums)))
+        if nums != expected:
+            problems.append(f"line numbers {nums} are not consecutive")
+    return problems
 
 
 def call_api(payload: dict, api_key: str, retries: int = 3) -> str:
@@ -236,14 +320,33 @@ def main() -> int:
         try:
             if mock_reply is not None:
                 reply = mock_reply
+                pipe = extract_pipe(reply)
+                problems = validate(pipe) if pipe else ["no pipe rows in reply"]
             else:
                 media, b64 = encode_image(path)
                 reply = call_api(build_request(media, b64, args.model), api_key)
-            pipe = extract_pipe(reply)
+                pipe = extract_pipe(reply)
+                problems = validate(pipe) if pipe else ["no pipe rows in reply"]
+                if problems:
+                    # One more look at the image, told what went wrong.
+                    note = "\n".join("- " + p for p in problems)
+                    print(f"{path.stem}: retrying ({len(problems)} problem(s))")
+                    reply2 = call_api(
+                        build_request(media, b64, args.model, feedback=note), api_key
+                    )
+                    pipe2 = extract_pipe(reply2)
+                    problems2 = validate(pipe2) if pipe2 else ["no pipe rows in reply"]
+                    # Keep the retry only if it is no worse than the first try.
+                    if pipe2 and len(problems2) <= len(problems):
+                        reply, pipe, problems = reply2, pipe2, problems2
             if not pipe:
-                raise RuntimeError("no pipe rows in reply")
+                (args.out / f"{path.stem}.raw.txt").write_text(reply)
+                raise RuntimeError("no pipe rows in reply (raw reply saved)")
             dest.write_text(pipe)
-            print(f"{path.stem}: {len(pipe.splitlines())} lines")
+            note = f"  [{len(problems)} unresolved]" if problems else ""
+            print(f"{path.stem}: {len(pipe.splitlines())} lines{note}")
+            for p in problems:
+                print(f"    ! {p}")
         except Exception as e:  # noqa: BLE001
             failures += 1
             print(f"{path.stem}: FAILED - {e}", file=sys.stderr)
