@@ -363,6 +363,33 @@ tinyAnthropicCall rawKey = do
     Left e     -> Left (flatten (redact (displayException (e :: SomeException))))
     Right resp -> Right (getResponseStatusCode resp)
 
+-- | Post a request of roughly the given size and report what came back.
+--
+-- The model name is deliberately invalid, so the API rejects the request
+-- before it charges for anything -- but it can only reject what it has
+-- received, so any HTTP status at all proves the bytes arrived. A connection
+-- exception means they did not. That is the distinction we need, and this way
+-- the sweep is free.
+sizeProbe :: String -> Int -> IO (Int, String)
+sizeProbe rawKey kb = do
+  initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
+  let filler  = T.replicate (kb * 1024) "x"
+      payload = A.object
+        [ "model"      .= ("probe-not-a-real-model" :: String)
+        , "max_tokens" .= (1 :: Int)
+        , "messages"   .= [ A.object [ "role" .= ("user" :: String)
+                                     , "content" .= filler ] ]
+        ]
+      req = setRequestBodyLBS (A.encode payload)
+          $ setRequestHeader "content-type"      ["application/json"]
+          $ setRequestHeader "x-api-key"         [BS.pack (trimKey rawKey)]
+          $ setRequestHeader "anthropic-version" ["2023-06-01"]
+          $ initReq { HC.responseTimeout = HC.responseTimeoutMicro (60 * 1000000) }
+  outcome <- try (httpLBS req)
+  pure $ case outcome of
+    Left e     -> (kb, "FAILED: " ++ take 90 (flatten (redact (displayException (e :: SomeException)))))
+    Right resp -> (kb, "reached the API, HTTP " ++ show (getResponseStatusCode resp))
+
 -- | Run an action, retrying a failure a few times with a short pause.
 retrying :: Int -> IO (Either SomeException a) -> IO (Either SomeException a)
 retrying n act = do
@@ -751,17 +778,17 @@ main = do
           [ "status" .= ("no_key" :: String)
           , "error"  .= ("ANTHROPIC_API_KEY is not set." :: String) ]
         Just k -> do
-          r <- liftAndCatchIO $ tinyAnthropicCall k
-          case r of
-            Left e  -> do
-              status status502
-              json $ object [ "status" .= ("failed" :: String), "error" .= e ]
-            Right c -> json $ object
-              [ "status"    .= ("ok" :: String)
-              , "httpStatus" .= c
-              , "note" .= ("A small request reached the API. If photographs \
-                           \still fail, the problem is the size of the upload, \
-                           \not the connection." :: String) ]
+          r      <- liftAndCatchIO $ tinyAnthropicCall k
+          probes <- liftAndCatchIO $ mapM (sizeProbe k) [16, 64, 128, 256, 512]
+          json $ object
+            [ "status"  .= (either (const "failed") (const "ok") r :: String)
+            , "tiny"    .= either id (\c -> "HTTP " ++ show c) r
+            , "bySize"  .= [ object [ "kb" .= kb, "result" .= res ]
+                           | (kb, res) <- probes ]
+            , "note"    .= ("The transcription request is about 600 KB. The \
+                            \largest size below that reaches the API is the \
+                            \limit we are hitting." :: String)
+            ]
 
     -- Photograph a proof, confirm the transcription, then check it
     get "/photo" $ file "static/photo.html"
