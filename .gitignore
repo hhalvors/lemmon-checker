@@ -49,3 +49,8 @@ training-data/
 *.so
 # Eval predictions are generated output, not source
 eval/pred*/
+
+# LaTeX build artefacts
+*.aux
+*.log
+*.synctex.gz

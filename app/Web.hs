@@ -635,6 +635,15 @@ main = do
             , "error"  .= ("Expected {sentenceText: ...}" :: String)
             ]
 
+    -- The blank proof template, for printing. Served explicitly rather than
+    -- left to the static middleware so that the URL is memorable and the
+    -- headers are right: browsers need the content type to preview a PDF
+    -- rather than download it as an unknown blob.
+    get "/template" $ do
+      setHeader "Content-Type" "application/pdf"
+      setHeader "Content-Disposition" "inline; filename=\"proof-template.pdf\""
+      file "static/template.pdf"
+
     -- Photograph a proof, confirm the transcription, then check it
     get "/photo" $ file "static/photo.html"
 
