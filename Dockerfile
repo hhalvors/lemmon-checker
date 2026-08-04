@@ -15,6 +15,7 @@ RUN --mount=type=cache,target=/root/.stack stack setup --install-ghc --no-termin
 COPY src ./src
 COPY app ./app
 COPY static ./static
+COPY prompts ./prompts
 
 RUN --mount=type=cache,target=/root/.stack \
     --mount=type=cache,target=/app/.stack-work \
@@ -32,6 +33,8 @@ WORKDIR /app
 # Copy the web binary and static assets
 COPY --from=build /app/bin/web /usr/local/bin/web
 COPY static ./static
+# The /transcribe route reads its prompt from here at request time.
+COPY prompts ./prompts
 
 EXPOSE 8080
 ENV PORT=8080

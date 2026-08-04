@@ -24,7 +24,7 @@ import           Web.Scotty
 import           Network.Wai                     (Request(..), RequestBodyLength(..))
 import           Network.Wai.Middleware.Static   (staticPolicy, addBase)
 import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
-import Network.HTTP.Types.Status (status200, status400, status401, status413, status500)
+import Network.HTTP.Types.Status (status200, status400, status401, status413, status500, status502)
 import           Network.HTTP.Simple         -- from http-conduit
 import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 import TruthTable.Html (truthTableHtml, truthTableHtmlMainOnly)
@@ -68,6 +68,11 @@ maxBodyBytes  = 128 * 1024      -- 128 KiB
 
 maxProofLines :: Int
 maxProofLines = 400
+
+-- Shared with tools/transcribe.py, so the browser route and the evaluation
+-- harness read photographs with one prompt rather than two that drift apart.
+promptFile :: FilePath
+promptFile = "prompts/transcribe.txt"
 
 -- truth table auxiliaries
 
@@ -128,6 +133,122 @@ reportToJSON reps =
     [ "valid" .= LC.proofValid reps
     , "lines" .= map lineReportToJSON reps
     ]
+
+--------------------------------------------------------------------------------
+-- Transcribing a photograph of a proof
+--------------------------------------------------------------------------------
+
+-- | Split "data:image/jpeg;base64,AAAA" into ("image/jpeg", "AAAA").
+splitDataUrl :: String -> Maybe (String, String)
+splitDataUrl s = do
+  rest          <- stripPrefix' "data:" s
+  let (meta, enc) = break (== ',') rest
+  payload       <- case enc of
+                     (_:p) -> Just p
+                     []    -> Nothing
+  media         <- case break (== ';') meta of
+                     (m, ";base64") -> Just m
+                     _              -> Nothing
+  pure (media, payload)
+  where
+    stripPrefix' p xs
+      | take (length p) xs == p = Just (drop (length p) xs)
+      | otherwise               = Nothing
+
+-- | Concatenate the text blocks of a Messages API response, ignoring any
+-- thinking blocks.
+responseText :: A.Value -> String
+responseText v =
+  case v of
+    A.Object o ->
+      case KM.lookup "content" o of
+        Just (A.Array blocks) ->
+          concat [ T.unpack t
+                 | A.Object b <- V.toList blocks
+                 , Just (A.String "text") <- [KM.lookup "type" b]
+                 , Just (A.String t)      <- [KM.lookup "text" b]
+                 ]
+        _ -> ""
+    _ -> ""
+
+-- | Keep the pipe rows out of a model reply, discarding fences, commentary,
+-- a header row, and the blank rows of the printed template. Mirrors
+-- extract_pipe in tools/transcribe.py.
+pipeRowsOf :: String -> String
+pipeRowsOf reply = unlines (filter keep (map trimS (lines (dropFence reply))))
+  where
+    trimS = dropWhile (== ' ') . reverse . dropWhile (== ' ') . reverse
+    dropFence t = unlines [ l | l <- lines t, take 3 l /= "```" ]
+    keep l =
+      let cols = splitPipe l
+      in length cols == 4
+         && not (null (trimS (cols !! 2)))            -- blank template row
+         && not (isHeaderRow cols)
+    isHeaderRow cols =
+      let low = map toLowerC (concat cols)
+      in substr "depends" low && substr "justif" low
+    toLowerC c = if c >= 'A' && c <= 'Z' then toEnum (fromEnum c + 32) else c
+    substr needle hay = any (\i -> take (length needle) (drop i hay) == needle)
+                            [0 .. length hay]
+
+splitPipe :: String -> [String]
+splitPipe s = case break (== '|') s of
+  (a, [])     -> [a]
+  (a, _:rest) -> a : splitPipe rest
+
+-- | Things worth a second look before the student presses Check.
+--
+-- The heavy lifting is done by the parser itself, which already rejects
+-- unknown rules and wrong reference counts, so this adds only the one check
+-- the parser cannot make: an assumption whose Depends cell is empty. Every
+-- dropped row in the evaluation corpus showed up that way. It is reported,
+-- never repaired — if the cell really is blank the student has made a mistake
+-- and the checker must be allowed to say so.
+transcriptionNotices :: String -> [String]
+transcriptionNotices pipe =
+  [ "Line " ++ trimS (cols !! 1) ++ " is an assumption, but its dependency "
+    ++ "cell came out empty. An assumption depends on its own line, so check "
+    ++ "that against your photo."
+  | l <- lines pipe
+  , let cols = splitPipe l
+  , length cols == 4
+  , trimS (cols !! 3) == "A"
+  , null (trimS (cols !! 0))
+  ]
+  where trimS = dropWhile (== ' ') . reverse . dropWhile (== ' ') . reverse
+
+-- | One call to the Messages API, returning the raw decoded response.
+callAnthropic :: String -> String -> String -> String -> IO (Either String A.Value)
+callAnthropic apiKey media b64 promptText = do
+  initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
+  let payload = A.object
+        [ "model"      .= ("claude-sonnet-5" :: String)
+        , "max_tokens" .= (8000 :: Int)
+          -- Transcription is perception, not reasoning. Left enabled, thinking
+          -- can consume the whole budget on a dense page and emit no text.
+        , "thinking"   .= A.object [ "type" .= ("disabled" :: String) ]
+        , "messages"   .= [ A.object
+            [ "role"    .= ("user" :: String)
+            , "content" .=
+                [ A.object
+                    [ "type"   .= ("image" :: String)
+                    , "source" .= A.object
+                        [ "type"       .= ("base64" :: String)
+                        , "media_type" .= media
+                        , "data"       .= b64
+                        ]
+                    ]
+                , A.object [ "type" .= ("text" :: String), "text" .= promptText ]
+                ]
+            ] ]
+        ]
+      req = setRequestBodyLBS (A.encode payload)
+          $ setRequestHeader "content-type"      ["application/json"]
+          $ setRequestHeader "x-api-key"         [BS.pack apiKey]
+          $ setRequestHeader "anthropic-version" ["2023-06-01"]
+          $ initReq
+  resp <- httpLBS req
+  pure (A.eitherDecode' (getResponseBody resp))
 
 collectTexts :: A.Value -> [T.Text]
 collectTexts (A.Object o) =
@@ -418,6 +539,85 @@ main = do
             [ "status" .= ("bad_request" :: String)
             , "error"  .= ("Expected {sentenceText: ...}" :: String)
             ]
+
+    -- Photograph a proof, confirm the transcription, then check it
+    get "/photo" $ file "static/photo.html"
+
+    post "/transcribe" $ do
+      raw <- body
+      case A.eitherDecode' raw of
+        Left e -> do
+          status status400
+          json $ object [ "status" .= ("bad_json" :: String), "error" .= e ]
+        Right (A.Object o) ->
+          case AT.parseEither (AT..: "dataUrl") o of
+            Left perr -> do
+              status status400
+              json $ object [ "status" .= ("bad_json" :: String), "error" .= perr ]
+            Right dataUrl ->
+              case splitDataUrl (dataUrl :: String) of
+                Nothing -> do
+                  status status400
+                  json $ object
+                    [ "status" .= ("bad_image" :: String)
+                    , "error"  .= ("Expected a base64 data URL for the photo." :: String) ]
+                Just (media, b64) -> do
+                  mKey <- liftAndCatchIO $ lookupEnv "ANTHROPIC_API_KEY"
+                  case mKey of
+                    Nothing -> do
+                      status status500
+                      json $ object
+                        [ "status" .= ("server_not_configured" :: String)
+                        , "error"  .= ("Set ANTHROPIC_API_KEY on the server." :: String) ]
+                    Just apiKey -> do
+                      promptText <- liftAndCatchIO $ readFile promptFile
+                      first <- liftAndCatchIO $ callAnthropic apiKey media b64 promptText
+                      case first of
+                        Left decErr -> do
+                          status status500
+                          json $ object
+                            [ "status" .= ("upstream_error" :: String)
+                            , "error"  .= decErr ]
+                        Right v -> do
+                          let pipe0 = pipeRowsOf (responseText v)
+                          -- The parser is the validator. If the transcription
+                          -- will not parse, show the model its own error and
+                          -- let it look at the photograph once more.
+                          pipe <- case parsePipeProof pipe0 of
+                            Right _ -> pure pipe0
+                            Left perr -> do
+                              let note = promptText
+                                       ++ "\n\nYour previous attempt could not be "
+                                       ++ "read by the proof checker:\n\n" ++ perr
+                                       ++ "\n\nLook at the image again and correct "
+                                       ++ "it. Do not invent content: if a cell "
+                                       ++ "really is blank, leave it blank."
+                              again <- liftAndCatchIO $
+                                         callAnthropic apiKey media b64 note
+                              pure $ case again of
+                                Right v2 ->
+                                  let p2 = pipeRowsOf (responseText v2)
+                                  in if null p2 then pipe0 else p2
+                                Left _ -> pipe0
+                          if null pipe
+                            then do
+                              status status502
+                              json $ object
+                                [ "status" .= ("no_transcription" :: String)
+                                , "error"  .= ("Nothing legible was found in that \
+                                               \photo. Try again with more light, \
+                                               \or type the proof in directly." :: String) ]
+                            else
+                              json $ object
+                                [ "status"  .= ("ok" :: String)
+                                , "pipe"    .= pipe
+                                , "notices" .= transcriptionNotices pipe
+                                ]
+        _ -> do
+          status status400
+          json $ object
+            [ "status" .= ("bad_json" :: String)
+            , "error"  .= ("Expected an object with a dataUrl field." :: String) ]
 
     -- OCR page
     get "/ocr" $ file "static/ocr.html"

@@ -53,64 +53,14 @@ DEFAULT_TIMEOUT = 600
 
 # The closed vocabulary the justification column is allowed to use. Keep in
 # step with ruleAliases in src/PipeParse.hs.
-RULE_FORMS = """\
-  A
-  <m>,<n> MP        <m>,<n> MT        <m> DN            <m>,<n> CP
-  <m>,<n> ∧I        <m> ∧E            <m> ∨I            <d>,<a1>,<c1>,<a2>,<c2> ∨E
-  <m>,<n> RAA       <m> ∀E            <m> ∀I            <m> ∃I
-  <m>,<a>,<n> ∃E    <m>,<n> ↔I        <m>,<n> ↔E        <m> QN
-  =I                <m>,<n> =E        LEM               prop taut"""
+# The prompt lives in prompts/transcribe.txt so that this script and the
+# /transcribe route in Web.hs use one text rather than two that drift apart.
+PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "transcribe.txt"
 
-PROMPT = f"""\
-This is a photograph of a handwritten natural-deduction proof on a printed \
-template. The page may be rotated by 90 degrees.
-
-The template is a four-column table: Depends | (Line) | Formula | \
-Justification. The line numbers (1) to (19) are pre-printed, so most rows are \
-blank. Transcribe only the rows the student has written in.
-
-Output one line per filled row, in exactly this format:
-
-  <depends>|<line>|<formula>|<justification>
-
-depends
-    Comma-separated line numbers, e.g. 1,2 — or empty if the cell is blank.
-    An empty dependency cell is meaningful; leave the field empty, do not omit it.
-
-line
-    The pre-printed line number, digits only.
-
-formula
-    Use the symbols ¬ ∧ ∨ → ↔ ∀ ∃ =. Predicates are capital letters and their
-    terms are lower-case letters written straight after them: Fa, Fx, Rab.
-    Reproduce the parentheses as written.
-
-justification
-    Exactly one of these forms, where <m>, <n> are line numbers:
-
-{RULE_FORMS}
-
-    The page may use variant spellings — cP for CP, UI or uI for ∀I, EI for
-    ∃I, ANDI for ∧I, v for ∨. Map those to the canonical forms above. That is
-    the only normalising you should do.
-
-START AT ROW (1). The first data row sits immediately below the shaded header
-band, and its Depends cell is often a single small digit close to that band.
-It is easy to mistake for part of the header. It is not: read it. Every output
-row must have a line number, and the rows you output must be consecutive
-starting from 1.
-
-TRANSCRIBE EXACTLY WHAT IS WRITTEN, INCLUDING MISTAKES. This transcription is
-fed to a proof checker that reports errors back to the student. If a
-justification looks wrong for the formula on that row, or a dependency set
-looks incorrect, write down what is on the page regardless. Do not correct,
-complete, or tidy up the proof. A transcription that silently repairs an error
-is worse than useless, because the student is then told their mistake is fine.
-
-If a cell is genuinely illegible, write ??? in it rather than guessing.
-
-Output only the pipe lines. No commentary, no code fence, no header row.
-"""
+try:
+    PROMPT = PROMPT_PATH.read_text()
+except FileNotFoundError:                       # pragma: no cover
+    sys.exit(f"missing prompt file: {PROMPT_PATH}")
 
 
 def encode_image(path: Path) -> tuple[str, str]:
@@ -255,6 +205,15 @@ def validate(pipe: str) -> list[str]:
             nums.append(int(ln))
         if not formula:
             problems.append(f"row {i}: the formula cell is empty")
+        # A formula whose brackets do not balance is wrong whatever it says,
+        # and long nested formulas are where this goes astray. Cheap to check
+        # here, and unambiguous, so it is worth another look at the image.
+        elif formula.count("(") != formula.count(")"):
+            problems.append(
+                f"row {i}: the formula {formula!r} has {formula.count('(')} "
+                f"opening and {formula.count(')')} closing brackets, so it "
+                f"cannot be right as transcribed"
+            )
         rule, nrefs = parse_just(just)
         if rule not in RULE_TOKENS:
             problems.append(
