@@ -30,9 +30,12 @@ RUN apt-get update -y && \
 RUN useradd -m app
 WORKDIR /app
 
-# Deliberately no LANG here. Web.hs sets the encoding itself, which holds
-# wherever the binary runs, and leaving the environment untouched lets the
-# startup log report what this image actually provides.
+# This image sets no locale, so GHC's readFile and putStrLn fall back to ASCII
+# -- and prompts/transcribe.txt is UTF-8 with the logical symbols in it. That
+# broke every transcription on the host while development on macOS, which
+# supplies UTF-8, worked perfectly. Web.hs forces the encoding at startup as
+# well, so this is the second of two layers rather than the only one.
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 
 # Copy the web binary and static assets
 COPY --from=build /app/bin/web /usr/local/bin/web

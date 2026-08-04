@@ -345,405 +345,6 @@ redact = go
               || (ch >= 'A' && ch <= 'Z')
               || (ch >= '0' && ch <= '9')
 
--- | The smallest possible real request to the Messages API: no image, a
--- handful of tokens. Returns the HTTP status, or the failure.
-tinyAnthropicCall :: String -> IO (Either String Int)
-tinyAnthropicCall rawKey = do
-  initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
-  let payload = A.object
-        [ "model"      .= ("claude-sonnet-5" :: String)
-        , "max_tokens" .= (4 :: Int)
-        , "messages"   .= [ A.object [ "role" .= ("user" :: String)
-                                     , "content" .= ("hi" :: String) ] ]
-        ]
-      req = setRequestBodyLBS (A.encode payload)
-          $ setRequestHeader "content-type"      ["application/json"]
-          $ setRequestHeader "x-api-key"         [BS.pack (trimKey rawKey)]
-          $ setRequestHeader "anthropic-version" ["2023-06-01"]
-          $ initReq { HC.responseTimeout = HC.responseTimeoutMicro (60 * 1000000) }
-  outcome <- try (httpLBS req)
-  pure $ case outcome of
-    Left e     -> Left (flatten (redact (displayException (e :: SomeException))))
-    Right resp -> Right (getResponseStatusCode resp)
-
--- | Post a request of roughly the given size and report what came back.
---
--- The model name is deliberately invalid, so the API rejects the request
--- before it charges for anything -- but it can only reject what it has
--- received, so any HTTP status at all proves the bytes arrived. A connection
--- exception means they did not. That is the distinction we need, and this way
--- the sweep is free.
-sizeProbe :: String -> Int -> IO (Int, String)
-sizeProbe rawKey kb = do
-  initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
-  let filler  = T.replicate (kb * 1024) "x"
-      payload = A.object
-        [ "model"      .= ("probe-not-a-real-model" :: String)
-        , "max_tokens" .= (1 :: Int)
-        , "messages"   .= [ A.object [ "role" .= ("user" :: String)
-                                     , "content" .= filler ] ]
-        ]
-      req = setRequestBodyLBS (A.encode payload)
-          $ setRequestHeader "content-type"      ["application/json"]
-          $ setRequestHeader "x-api-key"         [BS.pack (trimKey rawKey)]
-          $ setRequestHeader "anthropic-version" ["2023-06-01"]
-          $ initReq { HC.responseTimeout = HC.responseTimeoutMicro (60 * 1000000) }
-  outcome <- try (httpLBS req)
-  pure $ case outcome of
-    Left e     -> (kb, "FAILED: " ++ take 90 (flatten (redact (displayException (e :: SomeException)))))
-    Right resp -> (kb, "reached the API, HTTP " ++ show (getResponseStatusCode resp))
-
--- | A valid request that deliberately takes a while to answer.
---
--- The size probes use an invalid model, so the API rejects them at once and
--- the connection is never idle. A real transcription is silent for ten to
--- thirty seconds while the model reads the page. If a slow request fails
--- where a fast one of the same size succeeds, the problem is the idle period,
--- not the payload -- and the remedy is streaming, which keeps bytes moving.
-slowProbe :: String -> IO String
-slowProbe rawKey = do
-  t0 <- getCurrentTime
-  initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
-  let payload = A.object
-        [ "model"      .= ("claude-sonnet-5" :: String)
-        , "max_tokens" .= (2000 :: Int)
-        , "thinking"   .= A.object [ "type" .= ("disabled" :: String) ]
-        , "messages"   .= [ A.object
-            [ "role"    .= ("user" :: String)
-            , "content" .= ("Write out the numbers from 1 to 400, separated by \
-                            \commas. Output nothing else." :: String) ] ]
-        ]
-      req = setRequestBodyLBS (A.encode payload)
-          $ setRequestHeader "content-type"      ["application/json"]
-          $ setRequestHeader "x-api-key"         [BS.pack (trimKey rawKey)]
-          $ setRequestHeader "anthropic-version" ["2023-06-01"]
-          $ initReq { HC.responseTimeout = HC.responseTimeoutMicro (180 * 1000000) }
-  outcome <- try (httpLBS req)
-  t1 <- getCurrentTime
-  let secs = show (round (realToFrac (diffUTCTime t1 t0) :: Double) :: Int) ++ "s"
-  pure $ case outcome of
-    Left e     -> "FAILED after " ++ secs ++ ": "
-                  ++ take 90 (flatten (redact (displayException (e :: SomeException))))
-    Right resp -> "succeeded after " ++ secs ++ ", HTTP "
-                  ++ show (getResponseStatusCode resp)
-
--- | Large upload followed by a long wait: the one combination the other
--- probes leave untested, and the only one that matches the real request.
---
--- The size probes are rejected instantly, so their connections never go
--- quiet. The slow probe is tiny. A middlebox that drops a connection which
--- falls silent after a substantial transfer would pass both and fail this.
-combinedProbe :: String -> Int -> IO String
-combinedProbe rawKey kb = do
-  t0 <- getCurrentTime
-  initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
-  let filler  = T.replicate (kb * 1024) "x"
-      payload = A.object
-        [ "model"      .= ("claude-sonnet-5" :: String)
-        , "max_tokens" .= (1500 :: Int)
-        , "thinking"   .= A.object [ "type" .= ("disabled" :: String) ]
-        , "messages"   .= [ A.object
-            [ "role"    .= ("user" :: String)
-            , "content" .= (T.concat
-                [ "Ignore the following padding entirely: ", filler
-                , "\n\nNow write out the numbers from 1 to 900, separated by \
-                  \commas. Output nothing else." ]) ] ]
-        ]
-      req = setRequestBodyLBS (A.encode payload)
-          $ setRequestHeader "content-type"      ["application/json"]
-          $ setRequestHeader "x-api-key"         [BS.pack (trimKey rawKey)]
-          $ setRequestHeader "anthropic-version" ["2023-06-01"]
-          $ initReq { HC.responseTimeout = HC.responseTimeoutMicro (180 * 1000000) }
-  outcome <- try (httpLBS req)
-  t1 <- getCurrentTime
-  let secs = show (round (realToFrac (diffUTCTime t1 t0) :: Double) :: Int) ++ "s"
-  pure $ case outcome of
-    Left e     -> show kb ++ " KB, FAILED after " ++ secs ++ ": "
-                  ++ take 80 (flatten (redact (displayException (e :: SomeException))))
-    Right resp -> show kb ++ " KB, succeeded after " ++ secs ++ ", HTTP "
-                  ++ show (getResponseStatusCode resp)
-
--- | An 8x8 white JPEG. Small enough to embed, real enough for the API to
--- accept as an image.
-tinyJpegB64 :: T.Text
-tinyJpegB64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA0JCgsKCA0LCgsODg0PEyAVExISEyccHhcgLikxMC4pLSwzOko+MzZGNywtQFdBRkxOUlNSMj5aYVpQYEpRUk//2wBDAQ4ODhMREyYVFSZPNS01T09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0//wAARCAAIAAgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD06iiigD//2Q=="
-
--- | The last untested difference: an image content block.
---
--- Every probe that succeeds sends plain text. The request that fails sends a
--- content array with an image in it. This sends a real image plus padding, in
--- exactly the shape /transcribe uses, so the only thing varying from a passing
--- probe is the presence of the image block.
-imageProbe :: String -> Int -> IO String
-imageProbe rawKey kb = do
-  t0 <- getCurrentTime
-  initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
-  let padding = T.replicate (kb * 1024) "x"
-      payload = A.object
-        [ "model"      .= ("claude-sonnet-5" :: String)
-        , "max_tokens" .= (600 :: Int)
-        , "stream"     .= True
-        , "thinking"   .= A.object [ "type" .= ("disabled" :: String) ]
-        , "messages"   .= [ A.object
-            [ "role"    .= ("user" :: String)
-            , "content" .=
-                [ A.object
-                    [ "type"   .= ("image" :: String)
-                    , "source" .= A.object
-                        [ "type"       .= ("base64" :: String)
-                        , "media_type" .= ("image/jpeg" :: String)
-                        , "data"       .= tinyJpegB64
-                        ]
-                    ]
-                , A.object
-                    [ "type" .= ("text" :: String)
-                    , "text" .= T.concat
-                        [ "Ignore this padding: ", padding
-                        , "\n\nWrite the numbers 1 to 300, comma separated." ]
-                    ]
-                ] ] ]
-        ]
-      req = setRequestBodyLBS (A.encode payload)
-          $ setRequestHeader "content-type"      ["application/json"]
-          $ setRequestHeader "x-api-key"         [BS.pack (trimKey rawKey)]
-          $ setRequestHeader "anthropic-version" ["2023-06-01"]
-          $ initReq { HC.responseTimeout = HC.responseTimeoutMicro (180 * 1000000) }
-  outcome <- try (httpLBS req)
-  t1 <- getCurrentTime
-  let secs = show (round (realToFrac (diffUTCTime t1 t0) :: Double) :: Int) ++ "s"
-  pure $ case outcome of
-    Left e     -> "image + " ++ show kb ++ " KB, FAILED after " ++ secs ++ ": "
-                  ++ take 70 (flatten (redact (displayException (e :: SomeException))))
-    Right resp -> "image + " ++ show kb ++ " KB, succeeded after " ++ secs
-                  ++ ", HTTP " ++ show (getResponseStatusCode resp)
-
--- | How long the connection may stay silent before the first byte arrives.
---
--- This is the only variable that separates every passing probe from every
--- failing request. The real transcription posts 211 KB -- less than probes
--- that pass -- so size is not the cause. What it does instead is go quiet for
--- fifteen to thirty seconds while the model reads a dense page. The longest
--- silence this host has been shown to survive is seventeen seconds
--- (combinedProbe at 400 KB), and the failures begin right about there.
---
--- It also explains why streaming did not help. Streaming keeps bytes moving
--- only once the first token exists; with a real photograph the silence falls
--- before that, while the image is being read.
---
--- Non-streaming on purpose: the point is to hold the connection quiet for a
--- known length of time. Roughly fifty numbers a second, measured from the
--- probes above, so the count sets the duration.
-silenceProbe :: String -> Int -> IO String
-silenceProbe rawKey n = do
-  t0 <- getCurrentTime
-  initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
-  let payload = A.object
-        [ "model"      .= ("claude-sonnet-5" :: String)
-          -- 8000 to match the real request, which is also untested at this size
-        , "max_tokens" .= (8000 :: Int)
-        , "thinking"   .= A.object [ "type" .= ("disabled" :: String) ]
-        , "messages"   .= [ A.object
-            [ "role"    .= ("user" :: String)
-            , "content" .= ("Write out the numbers from 1 to " ++ show n
-                            ++ ", separated by commas. Output nothing else.") ] ]
-        ]
-      req = setRequestBodyLBS (A.encode payload)
-          $ setRequestHeader "content-type"      ["application/json"]
-          $ setRequestHeader "x-api-key"         [BS.pack (trimKey rawKey)]
-          $ setRequestHeader "anthropic-version" ["2023-06-01"]
-          $ initReq { HC.responseTimeout = HC.responseTimeoutMicro (300 * 1000000) }
-  outcome <- try (httpLBS req)
-  t1 <- getCurrentTime
-  let secs = show (round (realToFrac (diffUTCTime t1 t0) :: Double) :: Int) ++ "s"
-  pure $ case outcome of
-    Left e     -> "asked for " ++ show n ++ ", FAILED after " ++ secs ++ " -- "
-                  ++ take 70 (flatten (redact (displayException (e :: SomeException))))
-    Right resp -> "asked for " ++ show n ++ ", survived " ++ secs ++ " of silence, HTTP "
-                  ++ show (getResponseStatusCode resp)
-
--- | The reproduction as a standalone route, in both streaming modes.
-runRealProbe :: Bool -> String -> ActionM ()
-runRealProbe doStream size = do
-  mKey <- liftAndCatchIO $ lookupEnv "ANTHROPIC_API_KEY"
-  case mKey of
-    Nothing -> json $ object
-      [ "status" .= ("no_key" :: String)
-      , "error"  .= ("ANTHROPIC_API_KEY is not set." :: String) ]
-    Just k -> do
-      r <- liftAndCatchIO $ realImageProbe k doStream size
-      json $ object [ "status" .= ("done" :: String), "result" .= r ]
-
--- | The two-by-two the evidence actually points at.
---
--- Every probe that passes uses a short hardcoded ASCII prompt. Every probe
--- that fails reads prompts/transcribe.txt, which is UTF-8 and carries the
--- logical symbols. That correlation is exact across everything measured so
--- far, and it has never been varied deliberately -- the image was varied
--- instead, four times, and made no difference at all (41 KB fails exactly as
--- 244 KB does, both at fifteen seconds).
---
--- The ASCII arm keeps the prompt's length and structure and replaces only the
--- characters above 127, so the sole difference between the two arms is whether
--- non-ASCII text goes out in the body.
-matrixProbe :: String -> Bool -> Bool -> IO String
-matrixProbe rawKey bigImage rawPrompt = do
-  t0      <- getCurrentTime
-  prompt0 <- readFile promptFile
-  b64     <- if bigImage
-               then T.pack . filter (\c -> c /= '\n' && c /= '\r')
-                      <$> readFile "static/probe-md.b64"
-               else pure tinyJpegB64
-  let prompt = if rawPrompt
-                 then prompt0
-                 else map (\c -> if c > '\DEL' then '?' else c) prompt0
-      label  = (if bigImage then "125 KB image" else "8x8 image")
-               ++ " + " ++ (if rawPrompt then "prompt as-is" else "prompt ASCII-only")
-               ++ ": "
-  initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
-  let payload = A.object
-        [ "model"      .= ("claude-sonnet-5" :: String)
-        , "max_tokens" .= (8000 :: Int)
-        , "thinking"   .= A.object [ "type" .= ("disabled" :: String) ]
-        , "messages"   .= [ A.object
-            [ "role"    .= ("user" :: String)
-            , "content" .=
-                [ A.object
-                    [ "type"   .= ("image" :: String)
-                    , "source" .= A.object
-                        [ "type"       .= ("base64" :: String)
-                        , "media_type" .= ("image/jpeg" :: String)
-                        , "data"       .= b64 ] ]
-                , A.object [ "type" .= ("text" :: String), "text" .= prompt ]
-                ] ] ]
-        ]
-      req = setRequestBodyLBS (A.encode payload)
-          $ setRequestHeader "content-type"      ["application/json"]
-          $ setRequestHeader "x-api-key"         [BS.pack (trimKey rawKey)]
-          $ setRequestHeader "anthropic-version" ["2023-06-01"]
-          $ initReq { HC.responseTimeout = HC.responseTimeoutMicro (90 * 1000000) }
-  outcome <- try (httpLBS req)
-  t1 <- getCurrentTime
-  let secs = show (round (realToFrac (diffUTCTime t1 t0) :: Double) :: Int) ++ "s"
-  pure $ case outcome of
-    Left e     -> label ++ "FAILED after " ++ secs ++ " -- "
-                  ++ briefly (flatten (redact (displayException (e :: SomeException))))
-    Right resp -> label ++ "succeeded after " ++ secs ++ ", HTTP "
-                  ++ show (getResponseStatusCode resp)
-
--- | A faithful reproduction of the request that fails.
---
--- Every passing probe so far sits in one of two boxes: long but with no real
--- image (bySilence, 47 seconds), or a real image but answered quickly
--- (imageProbe, 12 seconds, an 8x8 JPEG). The failing request is the cell
--- neither covers -- a genuine photograph and a long wait together.
---
--- static/probe-{xs,sm,md,lg}.b64 are one real page from the evaluation corpus
--- at four resolutions -- 41, 68, 125 and 244 KB of base64 -- stored already
--- encoded so this needs no encoder dependency. lg matches what the browser
--- currently produces. The prompt is the real one, so the model does
--- the real work and takes the real amount of time.
---
--- The streaming flag matters because that combination is untested too: the
--- long probes that pass are all non-streaming, and the streaming probes that
--- pass are all short.
-realImageProbe :: String -> Bool -> String -> IO String
-realImageProbe rawKey doStream size = do
-  t0 <- getCurrentTime
-  rawB64 <- readFile ("static/probe-" ++ size ++ ".b64")
-  prompt <- readFile promptFile
-  let b64 = T.pack (filter (\c -> c /= '\n' && c /= '\r') rawB64)
-      label = (if doStream then "streaming" else "non-streaming")
-              ++ ", " ++ show (T.length b64 `div` 1024) ++ " KB b64: "
-  initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
-  let payload = A.object
-        [ "model"      .= ("claude-sonnet-5" :: String)
-        , "max_tokens" .= (8000 :: Int)
-        , "stream"     .= doStream
-        , "thinking"   .= A.object [ "type" .= ("disabled" :: String) ]
-        , "messages"   .= [ A.object
-            [ "role"    .= ("user" :: String)
-            , "content" .=
-                [ A.object
-                    [ "type"   .= ("image" :: String)
-                    , "source" .= A.object
-                        [ "type"       .= ("base64" :: String)
-                        , "media_type" .= ("image/jpeg" :: String)
-                        , "data"       .= b64
-                        ]
-                    ]
-                , A.object [ "type" .= ("text" :: String), "text" .= prompt ]
-                ] ] ]
-        ]
-      req = setRequestBodyLBS (A.encode payload)
-          $ setRequestHeader "content-type"      ["application/json"]
-          $ setRequestHeader "x-api-key"         [BS.pack (trimKey rawKey)]
-          $ setRequestHeader "anthropic-version" ["2023-06-01"]
-          -- 90 rather than the 180 the real call uses. A success takes about
-          -- twenty-five seconds and the observed failure about ten, so nothing
-          -- useful happens after ninety, and waiting three minutes per probe
-          -- makes this too slow to iterate on.
-          $ initReq { HC.responseTimeout = HC.responseTimeoutMicro (90 * 1000000) }
-  stage ("realprobe: " ++ label ++ "posting")
-  outcome <- try (httpLBS req)
-  t1 <- getCurrentTime
-  let secs = show (round (realToFrac (diffUTCTime t1 t0) :: Double) :: Int) ++ "s"
-  stage ("realprobe: finished in " ++ secs)
-  pure $ case outcome of
-    Left e     -> label ++ "FAILED after " ++ secs ++ " -- "
-                  ++ briefly (flatten (redact (displayException (e :: SomeException))))
-    Right resp -> label ++ "succeeded after " ++ secs ++ ", HTTP "
-                  ++ show (getResponseStatusCode resp) ++ ", "
-                  ++ show (BL.length (getResponseBody resp) `div` 1024) ++ " KB back"
-
--- | Kept for completeness, though 211 KB in the real request rules size out.
---
--- imageProbe pads the *text* block and leaves an 8x8 JPEG in the image, so the
--- largest image this host has been shown to send is about five hundred bytes.
--- A real photograph is one to three megabytes of base64 sitting in that field.
---
--- The padding is valid base64 but not a valid JPEG, so the API answers HTTP
--- 400. That is a pass, not a failure: it can only reject the image after it
--- has received the whole body, so a 400 proves the bytes arrived. The result
--- worth having here is a transport exception.
-bigImageProbe :: String -> Int -> IO String
-bigImageProbe rawKey kb = do
-  t0 <- getCurrentTime
-  initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
-  let fat = T.append tinyJpegB64 (T.replicate (kb * 1024) "A")
-      payload = A.object
-        [ "model"      .= ("claude-sonnet-5" :: String)
-        , "max_tokens" .= (16 :: Int)
-        , "messages"   .= [ A.object
-            [ "role"    .= ("user" :: String)
-            , "content" .=
-                [ A.object
-                    [ "type"   .= ("image" :: String)
-                    , "source" .= A.object
-                        [ "type"       .= ("base64" :: String)
-                        , "media_type" .= ("image/jpeg" :: String)
-                        , "data"       .= fat
-                        ]
-                    ]
-                , A.object
-                    [ "type" .= ("text" :: String)
-                    , "text" .= ("Describe this image." :: String) ]
-                ] ] ]
-        ]
-      req = setRequestBodyLBS (A.encode payload)
-          $ setRequestHeader "content-type"      ["application/json"]
-          $ setRequestHeader "x-api-key"         [BS.pack (trimKey rawKey)]
-          $ setRequestHeader "anthropic-version" ["2023-06-01"]
-          $ initReq { HC.responseTimeout = HC.responseTimeoutMicro (180 * 1000000) }
-  outcome <- try (httpLBS req)
-  t1 <- getCurrentTime
-  let secs = show (round (realToFrac (diffUTCTime t1 t0) :: Double) :: Int) ++ "s"
-  pure $ case outcome of
-    Left e     -> show kb ++ " KB image: TRANSPORT FAILURE after " ++ secs ++ ": "
-                  ++ take 70 (flatten (redact (displayException (e :: SomeException))))
-    Right resp -> show kb ++ " KB image: body delivered in " ++ secs
-                  ++ ", HTTP " ++ show (getResponseStatusCode resp)
-                  ++ " (400 expected -- the padding is not a JPEG)"
-
 -- | Run an action, retrying a failure a few times with a short pause.
 retrying :: Int -> IO (Either SomeException a) -> IO (Either SomeException a)
 retrying n act = do
@@ -761,47 +362,6 @@ retrying n act = do
            | otherwise   -> stage ("attempt failed after " ++ secs ++ "s, retrying")
                             >> threadDelay 1000000 >> retrying (n - 1) act
 
--- | Assemble the reply from a stream of server-sent events.
---
--- Streaming is not for progressive display here -- we still wait for the whole
--- reply. It is to keep bytes moving. A non-streamed request sits silent for
--- twenty-odd seconds while the model reads the page, and something between
--- this host and the API closes connections that go quiet for that long. With
--- streaming, deltas arrive continuously and the connection is never idle.
-assembleSSE :: L8.ByteString -> String
-assembleSSE body =
-  concat [ T.unpack t
-         | line <- L8.lines body
-         , L8.isPrefixOf "data: " line
-         , Just v <- [A.decode (L8.drop 6 line) :: Maybe A.Value]
-         , Just t <- [deltaText v]
-         ]
-  where
-    deltaText (A.Object o)
-      | Just (A.String "content_block_delta") <- KM.lookup "type" o
-      , Just (A.Object d) <- KM.lookup "delta" o
-      , Just (A.String t) <- KM.lookup "text" d
-      = Just t
-    deltaText _ = Nothing
-
--- | A timestamped progress line.
---
--- Every probe on the outbound leg now passes, so the fault is either in the
--- inbound POST or in this handler after the API answers -- and there is no way
--- to tell which from the outside. This makes the log say where it stopped
--- rather than leaving it to be inferred.
--- | The informative end of an http-client exception.
---
--- displayException on an HttpExceptionRequest renders the whole Request record
--- first and names the actual fault last, so taking a prefix -- which is what
--- these probes were doing -- keeps the boilerplate and discards the answer.
--- ResponseTimeout and NoResponseDataReceived are quite different failures and
--- the distinction was being truncated away.
-briefly :: String -> String
-briefly e
-  | length e <= 220 = e
-  | otherwise       = take 70 e ++ " ... " ++ reverse (take 140 (reverse e))
-
 -- | What the container thinks the prompt file says.
 --
 -- readFile decodes using the locale encoding. macOS sets a UTF-8 locale;
@@ -810,6 +370,19 @@ briefly e
 -- decode is wrong the character count rises (each three-byte symbol becoming
 -- three characters) and the highest code point drops to 255. Comparing this
 -- line against the same route run locally settles it without argument.
+-- | Does the prompt file round-trip? The logical symbols sit well above 255,
+-- so a maximum code point below that means the bytes were decoded as single
+-- characters and the symbols are mangled -- the bug that made every deployed
+-- transcription fail while development worked.
+promptDecodesCleanly :: IO Bool
+promptDecodesCleanly = do
+  r <- try (do p <- readFile promptFile
+               let hi = maximum (0 : map fromEnum p)
+               hi `seq` pure hi)
+  pure $ case r of
+    Left e   -> const False (e :: SomeException)
+    Right hi -> hi > 255
+
 promptDiag :: IO String
 promptDiag = do
   enc <- try Enc.getLocaleEncoding
@@ -843,7 +416,6 @@ callAnthropic rawKey media b64 promptText = do
   let payload = A.object
         [ "model"      .= ("claude-sonnet-5" :: String)
         , "max_tokens" .= (8000 :: Int)
-        , "stream"     .= True
           -- Transcription is perception, not reasoning. Left enabled, thinking
           -- can consume the whole budget on a dense page and emit no text.
         , "thinking"   .= A.object [ "type" .= ("disabled" :: String) ]
@@ -865,6 +437,11 @@ callAnthropic rawKey media b64 promptText = do
       -- http-client defaults to a 30 second response timeout. Reading a dense
       -- page takes longer than that often enough to matter, and the failure
       -- looks like a server fault rather than a slow one, so allow plenty.
+      -- This request is not streamed. It was, for a while, on the theory that
+      -- something closed connections that went quiet -- which measurement
+      -- later contradicted: this host carried a silent request for 47 seconds
+      -- without trouble. The real fault was the locale encoding, and the
+      -- streaming added nothing but a second reply format to parse.
       timedOut = initReq { HC.responseTimeout = HC.responseTimeoutMicro (180 * 1000000) }
       req = setRequestBodyLBS (A.encode payload)
           $ setRequestHeader "content-type"      ["application/json"]
@@ -873,11 +450,8 @@ callAnthropic rawKey media b64 promptText = do
           $ timedOut
   -- Catch rather than let the exception escape as an unhandled 500: a network
   -- failure reaching the API is not an internal error, and the caller needs to
-  -- be told which it was.
-  -- NoResponseDataReceived and friends are transient: a pooled connection the
-  -- far end had already closed, or a connection dropped in flight. One retry
-  -- on a fresh connection clears the common case, and costs a second when it
-  -- does not.
+  -- be told which it was. The retry covers a genuinely transient drop, such as
+  -- a pooled connection the far end had already closed.
   putStrLn ("[transcribe] posting " ++ show (T.length b64 * 3 `div` 4 `div` 1024)
             ++ " KB image to api.anthropic.com")
   outcome <- retrying 2 (try (httpLBS req))
@@ -897,7 +471,10 @@ callAnthropic rawKey media b64 promptText = do
                     ++ ": " ++ take 400 (L8.unpack bodyL))
           pure (Left ("The transcription service returned HTTP " ++ show code
                       ++ ". " ++ take 200 (L8.unpack bodyL)))
-        else pure (Right (assembleSSE bodyL))
+        else case A.decode bodyL of
+               Just v  -> pure (Right (responseText v))
+               Nothing -> pure (Left "The transcription service sent a reply \
+                                     \that could not be read as JSON.")
 
 collectTexts :: A.Value -> [T.Text]
 collectTexts (A.Object o) =
@@ -930,12 +507,6 @@ instance A.FromJSON ModelCheckReq where
 
 main :: IO ()
 main = do
-  -- Do not inherit the locale. readFile and putStrLn decode and encode with
-  -- whatever the environment says, and the deployment container sets nothing,
-  -- so GHC falls back to ASCII -- while a Mac supplies UTF-8. The prompt file
-  -- is UTF-8 and carries the logical symbols, so the same code reads a
-  -- different prompt in the two places. Fixing it here rather than only in the
-  -- Dockerfile means it holds wherever this runs.
   -- GHC block-buffers stdout when it is a pipe, which it is under Docker. Two
   -- lines written at startup then sit in an 8 KB buffer until later output
   -- pushes them out, so they appear late, out of order with the request log,
@@ -944,14 +515,31 @@ main = do
   hSetBuffering stdout LineBuffering
   hSetBuffering stderr LineBuffering
 
+  -- Do not inherit the locale. readFile and putStrLn decode and encode with
+  -- whatever the environment says, and the deployment container sets nothing,
+  -- so GHC falls back to ASCII -- while a Mac supplies UTF-8. The prompt file
+  -- is UTF-8 and carries the logical symbols, so the same code read a
+  -- different prompt in the two places, and every photograph failed on the
+  -- host while working perfectly in development. Fixing it here rather than
+  -- only in the Dockerfile means it holds wherever this runs.
   inherited <- Enc.getLocaleEncoding
   Enc.setLocaleEncoding Enc.utf8
   Enc.setFileSystemEncoding Enc.utf8
   Enc.setForeignEncoding Enc.utf8
   putStrLn ("[startup] inherited locale encoding: " ++ show inherited
             ++ " (now forced to UTF-8)")
+
+  -- Refuse to start on a mangled prompt rather than serving wrong
+  -- transcriptions quietly. The symbols are the whole point of the file: if
+  -- the highest code point is under 256 the decode is wrong, whatever the
+  -- locale claims.
   before <- promptDiag
   putStrLn ("[startup] prompt file: " ++ before)
+  ok <- promptDecodesCleanly
+  if ok
+    then putStrLn "[startup] prompt symbols decoded correctly"
+    else putStrLn "[startup] WARNING: prompt file did not decode as UTF-8. \
+                  \Transcription will misbehave. See /health/prompt."
 
   -- Respect $PORT in prod (platform sets it). Default to 8080 locally.
   mPort   <- lookupEnv "PORT"
@@ -1224,120 +812,22 @@ main = do
       setHeader "Content-Disposition" "inline; filename=\"proof-template.pdf\""
       file "static/template.pdf"
 
-    -- Does this server reach the Anthropic API at all?
+    -- Whether this process can read its own prompt file.
     --
-    -- The transcription request carries several hundred kilobytes of image.
-    -- If a tiny request to the same endpoint succeeds while the real one
-    -- fails, the connection is fine and the payload size is the problem --
-    -- a path-MTU or egress limit rather than anything in this code. If both
-    -- fail, the host cannot reach the API and the size is irrelevant. There
-    -- is no way to tell those apart from the outside, hence this route.
-    get "/transcribe/selftest" $ do
-      mKey <- liftAndCatchIO $ lookupEnv "ANTHROPIC_API_KEY"
-      case mKey of
-        Nothing -> json $ object
-          [ "status" .= ("no_key" :: String)
-          , "error"  .= ("ANTHROPIC_API_KEY is not set." :: String) ]
-        Just k -> do
-          r      <- liftAndCatchIO $ tinyAnthropicCall k
-          probes <- liftAndCatchIO $ mapM (sizeProbe k) [16, 64, 128, 256, 512]
-          slow   <- liftAndCatchIO $ slowProbe k
-          comb   <- liftAndCatchIO $ mapM (combinedProbe k) [128, 400]
-          imgs   <- liftAndCatchIO $ mapM (imageProbe k) [0, 400, 600]
-          big    <- liftAndCatchIO $ mapM (bigImageProbe k) [1024, 4096]
-          quiet  <- liftAndCatchIO $ mapM (silenceProbe k) [900, 1500, 2200, 3000]
-          real   <- liftAndCatchIO $
-                      mapM (realImageProbe k False) ["xs", "sm", "md", "lg"]
-          json $ object
-            [ "status"  .= (either (const "failed") (const "ok") r :: String)
-            , "tiny"    .= either id (\c -> "HTTP " ++ show c) r
-            , "bySize"  .= [ object [ "kb" .= kb, "result" .= res ]
-                           | (kb, res) <- probes ]
-            , "slowRequest"     .= slow
-            , "largeAndSlow"    .= comb
-            , "withImageBlock"  .= imgs
-            , "byImageSize"     .= big
-            , "bySilence"       .= quiet
-            , "realRequest"     .= real
-            , "note2"   .= ("realRequest is now the one that matters: a real \
-                            \photograph from the corpus, the real prompt, \
-                            \max_tokens 8000, run both non-streaming and \
-                            \streaming. It is the request that fails, minus the \
-                            \browser. If it fails here the reproduction is in \
-                            \hand and can go to Render support as a GET anyone \
-                            \can run. If it succeeds, the fault is not in the \
-                            \call at all but in the inbound POST or in this \
-                            \handler, and /transcribe/echo separates those." :: String)
-            , "note"    .= ("bySilence is the one that matters. The real \
-                            \request posts 211 KB -- smaller than probes that \
-                            \pass -- so size is not the cause. What it does is \
-                            \go quiet for fifteen to thirty seconds while the \
-                            \model reads the page. The longest silence proven \
-                            \here is seventeen seconds. These four hold the \
-                            \connection quiet for roughly 17, 30, 45 and 60 \
-                            \seconds. If the failures start partway down that \
-                            \ladder, the ceiling is an idle timeout on the way \
-                            \out of this host, and no amount of streaming will \
-                            \help because the silence falls before the first \
-                            \token exists." :: String)
-            ]
-
-    -- The reproduction on its own, so it can be run in thirty seconds rather
-    -- than behind two and a half minutes of probes that have already told us
-    -- what they have to tell.
-    --
-    --   /transcribe/realprobe         non-streaming, as the code was originally
-    --   /transcribe/realprobe/stream  streaming, as the code is now
-    get "/transcribe/realprobe"        $ runRealProbe False "lg"
-    get "/transcribe/realprobe/stream" $ runRealProbe True  "lg"
-    -- The ladder, one rung at a time: 41, 68, 125 and 244 KB of base64, the
-    -- same page photographed at four resolutions. If the small ones survive
-    -- and the large ones do not, downscaling harder in photo.html is a fix we
-    -- can ship today rather than waiting on Render.
-    -- What this process makes of the prompt file, answered without touching
-    -- the network or the log buffer.
+    -- The deployed container supplies no locale, so GHC fell back to ASCII
+    -- while prompts/transcribe.txt is UTF-8 carrying the logical symbols.
+    -- Every transcription failed for months on a bug that could not be
+    -- reproduced locally, because macOS supplies UTF-8. main now forces the
+    -- encoding; this route is how you check that it took, on any host, without
+    -- reading a log.
     get "/health/prompt" $ do
       diag <- liftAndCatchIO promptDiag
       json $ object
         [ "inheritedEncoding" .= show inherited
         , "prompt"            .= diag
         , "note" .= ("inheritedEncoding is what the container supplied before \
-                     \main forced UTF-8. If it is ASCII or ANSI_X3.4-1968 then \
-                     \every readFile and putStrLn in this process was decoding \
-                     \and encoding wrongly, and prompts/transcribe.txt is UTF-8 \
-                     \with the logical symbols in it." :: String) ]
-
-    -- The 2x2: image big/small crossed with prompt raw/ASCII-only, plus what
-    -- the container thinks the prompt file says.
-    get "/transcribe/matrix" $ do
-      diag <- liftAndCatchIO promptDiag
-      mKey <- liftAndCatchIO $ lookupEnv "ANTHROPIC_API_KEY"
-      case mKey of
-        Nothing -> json $ object [ "prompt" .= diag, "error" .= ("no key" :: String) ]
-        Just k  -> do
-          rs <- liftAndCatchIO $ sequence
-                  [ matrixProbe k big raw | big <- [False, True], raw <- [False, True] ]
-          json $ object [ "prompt" .= diag, "matrix" .= rs ]
-
-    get "/transcribe/realprobe/xs" $ runRealProbe False "xs"
-    get "/transcribe/realprobe/sm" $ runRealProbe False "sm"
-    get "/transcribe/realprobe/md" $ runRealProbe False "md"
-
-    -- The selftest is a GET, so it exercises none of the inbound path: no
-    -- large POST body, no proxy buffering it, no JSON decode of a quarter
-    -- megabyte. This does exactly that much and nothing else, so a failure
-    -- here locates the fault before the API is ever involved.
-    --
-    --   curl -s -X POST --data-binary @big.json <host>/transcribe/echo
-    post "/transcribe/echo" $ do
-      raw <- body
-      liftAndCatchIO $ stage ("echo: " ++ show (BL.length raw) ++ " bytes")
-      json $ object
-        [ "status" .= ("ok" :: String)
-        , "bytes"  .= BL.length raw
-        , "parses" .= (case A.eitherDecode' raw :: Either String A.Value of
-                         Left e  -> "no: " ++ take 120 e
-                         Right _ -> "yes") ]
+                     \main forced UTF-8. ASCII here is survivable now but means \
+                     \the host is still not setting a locale." :: String) ]
 
     -- Photograph a proof, confirm the transcription, then check it
     get "/photo" $ file "static/photo.html"
