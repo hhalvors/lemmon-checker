@@ -215,18 +215,32 @@ checkJustification proof line =
               expectedRefs = Set.union (references l1) (references l2)
               actualRefs   = references line
 
-              matchesMT = case (f1, f2, goal) of
+              -- The citation names the roles: the first line cited must be
+              -- the conditional, the second the negation of its consequent.
+              -- (Which line plays which part is a matter of convention, so we
+              -- hold students to it; contrast ∧I, where the *conclusion's*
+              -- shape is genuinely free.)
+              isMT (a, b) = case (a, b, goal) of
                 (Implies phi psi, Not psi', Not phi') -> psi == psi' && phi == phi'
-                (Not psi', Implies phi psi, Not phi') -> psi == psi' && phi == phi'
                 _ -> False
 
+              matchesMT = isMT (f1, f2)
+              -- Cited the other way round? Then the mistake is the citation,
+              -- not the reasoning, and we can say exactly that.
+              reversedMT = isMT (f2, f1)
+
               depsOK = actualRefs == expectedRefs
-  
+
           in if matchesMT && depsOK
              then Right ()
              else
                let msg1 = if not matchesMT
-                          then "Formula pattern does not match Modus Tollens"
+                          then if reversedMT
+                                 then "The first line cited by MT must be the "
+                                      ++ "conditional and the second the negation "
+                                      ++ "of its consequent, so cite "
+                                      ++ show n ++ "," ++ show m ++ " instead"
+                                 else "Formula pattern does not match Modus Tollens"
                           else ""
                    msg2 = if not depsOK
                           then "Dependencies on line " ++ show (lineNumber line) ++
@@ -264,23 +278,17 @@ checkJustification proof line =
           let phi          = formula l1
               psi          = formula l2
               goal         = formula line
-              expected     = And phi psi
-              -- The cited order fixes the order of the conjuncts: ∧I from
-              -- lines m,n yields φ∧ψ, not ψ∧φ. If the student wrote the
-              -- conjuncts the other way round, say so rather than just
-              -- reporting a mismatch.
-              swapped      = goal == And psi phi
+              -- ∧I is not sensitive to the order of the citation: from lines
+              -- m,n either φ∧ψ or ψ∧φ may be inferred. Insisting on one order
+              -- would only force the student to cite "n,m" instead, which
+              -- catches no error and gets in the way.
+              ok           = goal == And phi psi || goal == And psi phi
               depsExpected = Set.union (references l1) (references l2)
-          in if goal /= expected
+          in if not ok
                then Left $ "❌ Invalid ∧ Intro at line " ++ show (lineNumber line)
-                        ++ ": expected " ++ renderFormula expected
-                        ++ " but got " ++ renderFormula goal ++ "."
-                        ++ (if swapped
-                              then " (The conjuncts appear in the opposite order"
-                                   ++ " from the cited lines — either swap them"
-                                   ++ " or cite " ++ show n ++ "," ++ show m
-                                   ++ " instead.)"
-                              else "")
+                        ++ ": expected " ++ renderFormula (And phi psi)
+                        ++ " (or " ++ renderFormula (And psi phi)
+                        ++ ") but got " ++ renderFormula goal ++ "."
              else if references line /= depsExpected
                then Left $ "❌ ∧ Intro at line " ++ show (lineNumber line)
                         ++ ": dependencies must be the union of the cited lines'"
