@@ -514,6 +514,99 @@ imageProbe rawKey kb = do
     Right resp -> "image + " ++ show kb ++ " KB, succeeded after " ++ secs
                   ++ ", HTTP " ++ show (getResponseStatusCode resp)
 
+-- | How long the connection may stay silent before the first byte arrives.
+--
+-- This is the only variable that separates every passing probe from every
+-- failing request. The real transcription posts 211 KB -- less than probes
+-- that pass -- so size is not the cause. What it does instead is go quiet for
+-- fifteen to thirty seconds while the model reads a dense page. The longest
+-- silence this host has been shown to survive is seventeen seconds
+-- (combinedProbe at 400 KB), and the failures begin right about there.
+--
+-- It also explains why streaming did not help. Streaming keeps bytes moving
+-- only once the first token exists; with a real photograph the silence falls
+-- before that, while the image is being read.
+--
+-- Non-streaming on purpose: the point is to hold the connection quiet for a
+-- known length of time. Roughly fifty numbers a second, measured from the
+-- probes above, so the count sets the duration.
+silenceProbe :: String -> Int -> IO String
+silenceProbe rawKey n = do
+  t0 <- getCurrentTime
+  initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
+  let payload = A.object
+        [ "model"      .= ("claude-sonnet-5" :: String)
+          -- 8000 to match the real request, which is also untested at this size
+        , "max_tokens" .= (8000 :: Int)
+        , "thinking"   .= A.object [ "type" .= ("disabled" :: String) ]
+        , "messages"   .= [ A.object
+            [ "role"    .= ("user" :: String)
+            , "content" .= ("Write out the numbers from 1 to " ++ show n
+                            ++ ", separated by commas. Output nothing else.") ] ]
+        ]
+      req = setRequestBodyLBS (A.encode payload)
+          $ setRequestHeader "content-type"      ["application/json"]
+          $ setRequestHeader "x-api-key"         [BS.pack (trimKey rawKey)]
+          $ setRequestHeader "anthropic-version" ["2023-06-01"]
+          $ initReq { HC.responseTimeout = HC.responseTimeoutMicro (300 * 1000000) }
+  outcome <- try (httpLBS req)
+  t1 <- getCurrentTime
+  let secs = show (round (realToFrac (diffUTCTime t1 t0) :: Double) :: Int) ++ "s"
+  pure $ case outcome of
+    Left e     -> "asked for " ++ show n ++ ", FAILED after " ++ secs ++ " -- "
+                  ++ take 70 (flatten (redact (displayException (e :: SomeException))))
+    Right resp -> "asked for " ++ show n ++ ", survived " ++ secs ++ " of silence, HTTP "
+                  ++ show (getResponseStatusCode resp)
+
+-- | Kept for completeness, though 211 KB in the real request rules size out.
+--
+-- imageProbe pads the *text* block and leaves an 8x8 JPEG in the image, so the
+-- largest image this host has been shown to send is about five hundred bytes.
+-- A real photograph is one to three megabytes of base64 sitting in that field.
+--
+-- The padding is valid base64 but not a valid JPEG, so the API answers HTTP
+-- 400. That is a pass, not a failure: it can only reject the image after it
+-- has received the whole body, so a 400 proves the bytes arrived. The result
+-- worth having here is a transport exception.
+bigImageProbe :: String -> Int -> IO String
+bigImageProbe rawKey kb = do
+  t0 <- getCurrentTime
+  initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
+  let fat = T.append tinyJpegB64 (T.replicate (kb * 1024) "A")
+      payload = A.object
+        [ "model"      .= ("claude-sonnet-5" :: String)
+        , "max_tokens" .= (16 :: Int)
+        , "messages"   .= [ A.object
+            [ "role"    .= ("user" :: String)
+            , "content" .=
+                [ A.object
+                    [ "type"   .= ("image" :: String)
+                    , "source" .= A.object
+                        [ "type"       .= ("base64" :: String)
+                        , "media_type" .= ("image/jpeg" :: String)
+                        , "data"       .= fat
+                        ]
+                    ]
+                , A.object
+                    [ "type" .= ("text" :: String)
+                    , "text" .= ("Describe this image." :: String) ]
+                ] ] ]
+        ]
+      req = setRequestBodyLBS (A.encode payload)
+          $ setRequestHeader "content-type"      ["application/json"]
+          $ setRequestHeader "x-api-key"         [BS.pack (trimKey rawKey)]
+          $ setRequestHeader "anthropic-version" ["2023-06-01"]
+          $ initReq { HC.responseTimeout = HC.responseTimeoutMicro (180 * 1000000) }
+  outcome <- try (httpLBS req)
+  t1 <- getCurrentTime
+  let secs = show (round (realToFrac (diffUTCTime t1 t0) :: Double) :: Int) ++ "s"
+  pure $ case outcome of
+    Left e     -> show kb ++ " KB image: TRANSPORT FAILURE after " ++ secs ++ ": "
+                  ++ take 70 (flatten (redact (displayException (e :: SomeException))))
+    Right resp -> show kb ++ " KB image: body delivered in " ++ secs
+                  ++ ", HTTP " ++ show (getResponseStatusCode resp)
+                  ++ " (400 expected -- the padding is not a JPEG)"
+
 -- | Run an action, retrying a failure a few times with a short pause.
 retrying :: Int -> IO (Either SomeException a) -> IO (Either SomeException a)
 retrying n act = do
@@ -931,6 +1024,8 @@ main = do
           slow   <- liftAndCatchIO $ slowProbe k
           comb   <- liftAndCatchIO $ mapM (combinedProbe k) [128, 400]
           imgs   <- liftAndCatchIO $ mapM (imageProbe k) [0, 400, 600]
+          big    <- liftAndCatchIO $ mapM (bigImageProbe k) [1024, 4096]
+          quiet  <- liftAndCatchIO $ mapM (silenceProbe k) [900, 1500, 2200, 3000]
           json $ object
             [ "status"  .= (either (const "failed") (const "ok") r :: String)
             , "tiny"    .= either id (\c -> "HTTP " ++ show c) r
@@ -939,10 +1034,20 @@ main = do
             , "slowRequest"     .= slow
             , "largeAndSlow"    .= comb
             , "withImageBlock"  .= imgs
-            , "note"    .= ("largeAndSlow is the combination that matches the \
-                            \real request: a substantial upload followed by a \
-                            \long silence. The other probes vary only one of \
-                            \those at a time and both pass." :: String)
+            , "byImageSize"     .= big
+            , "bySilence"       .= quiet
+            , "note"    .= ("bySilence is the one that matters. The real \
+                            \request posts 211 KB -- smaller than probes that \
+                            \pass -- so size is not the cause. What it does is \
+                            \go quiet for fifteen to thirty seconds while the \
+                            \model reads the page. The longest silence proven \
+                            \here is seventeen seconds. These four hold the \
+                            \connection quiet for roughly 17, 30, 45 and 60 \
+                            \seconds. If the failures start partway down that \
+                            \ladder, the ceiling is an idle timeout on the way \
+                            \out of this host, and no amount of streaming will \
+                            \help because the silence falls before the first \
+                            \token exists." :: String)
             ]
 
     -- Photograph a proof, confirm the transcription, then check it
