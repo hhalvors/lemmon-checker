@@ -460,6 +460,60 @@ combinedProbe rawKey kb = do
     Right resp -> show kb ++ " KB, succeeded after " ++ secs ++ ", HTTP "
                   ++ show (getResponseStatusCode resp)
 
+-- | An 8x8 white JPEG. Small enough to embed, real enough for the API to
+-- accept as an image.
+tinyJpegB64 :: T.Text
+tinyJpegB64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA0JCgsKCA0LCgsODg0PEyAVExISEyccHhcgLikxMC4pLSwzOko+MzZGNywtQFdBRkxOUlNSMj5aYVpQYEpRUk//2wBDAQ4ODhMREyYVFSZPNS01T09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0//wAARCAAIAAgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD06iiigD//2Q=="
+
+-- | The last untested difference: an image content block.
+--
+-- Every probe that succeeds sends plain text. The request that fails sends a
+-- content array with an image in it. This sends a real image plus padding, in
+-- exactly the shape /transcribe uses, so the only thing varying from a passing
+-- probe is the presence of the image block.
+imageProbe :: String -> Int -> IO String
+imageProbe rawKey kb = do
+  t0 <- getCurrentTime
+  initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
+  let padding = T.replicate (kb * 1024) "x"
+      payload = A.object
+        [ "model"      .= ("claude-sonnet-5" :: String)
+        , "max_tokens" .= (600 :: Int)
+        , "stream"     .= True
+        , "thinking"   .= A.object [ "type" .= ("disabled" :: String) ]
+        , "messages"   .= [ A.object
+            [ "role"    .= ("user" :: String)
+            , "content" .=
+                [ A.object
+                    [ "type"   .= ("image" :: String)
+                    , "source" .= A.object
+                        [ "type"       .= ("base64" :: String)
+                        , "media_type" .= ("image/jpeg" :: String)
+                        , "data"       .= tinyJpegB64
+                        ]
+                    ]
+                , A.object
+                    [ "type" .= ("text" :: String)
+                    , "text" .= T.concat
+                        [ "Ignore this padding: ", padding
+                        , "\n\nWrite the numbers 1 to 300, comma separated." ]
+                    ]
+                ] ] ]
+        ]
+      req = setRequestBodyLBS (A.encode payload)
+          $ setRequestHeader "content-type"      ["application/json"]
+          $ setRequestHeader "x-api-key"         [BS.pack (trimKey rawKey)]
+          $ setRequestHeader "anthropic-version" ["2023-06-01"]
+          $ initReq { HC.responseTimeout = HC.responseTimeoutMicro (180 * 1000000) }
+  outcome <- try (httpLBS req)
+  t1 <- getCurrentTime
+  let secs = show (round (realToFrac (diffUTCTime t1 t0) :: Double) :: Int) ++ "s"
+  pure $ case outcome of
+    Left e     -> "image + " ++ show kb ++ " KB, FAILED after " ++ secs ++ ": "
+                  ++ take 70 (flatten (redact (displayException (e :: SomeException))))
+    Right resp -> "image + " ++ show kb ++ " KB, succeeded after " ++ secs
+                  ++ ", HTTP " ++ show (getResponseStatusCode resp)
+
 -- | Run an action, retrying a failure a few times with a short pause.
 retrying :: Int -> IO (Either SomeException a) -> IO (Either SomeException a)
 retrying n act = do
@@ -876,6 +930,7 @@ main = do
           probes <- liftAndCatchIO $ mapM (sizeProbe k) [16, 64, 128, 256, 512]
           slow   <- liftAndCatchIO $ slowProbe k
           comb   <- liftAndCatchIO $ mapM (combinedProbe k) [128, 400]
+          imgs   <- liftAndCatchIO $ mapM (imageProbe k) [0, 400, 600]
           json $ object
             [ "status"  .= (either (const "failed") (const "ok") r :: String)
             , "tiny"    .= either id (\c -> "HTTP " ++ show c) r
@@ -883,6 +938,7 @@ main = do
                            | (kb, res) <- probes ]
             , "slowRequest"     .= slow
             , "largeAndSlow"    .= comb
+            , "withImageBlock"  .= imgs
             , "note"    .= ("largeAndSlow is the combination that matches the \
                             \real request: a substantial upload followed by a \
                             \long silence. The other probes vary only one of \
