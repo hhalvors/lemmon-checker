@@ -558,6 +558,18 @@ silenceProbe rawKey n = do
     Right resp -> "asked for " ++ show n ++ ", survived " ++ secs ++ " of silence, HTTP "
                   ++ show (getResponseStatusCode resp)
 
+-- | The reproduction as a standalone route, in both streaming modes.
+runRealProbe :: Bool -> String -> ActionM ()
+runRealProbe doStream size = do
+  mKey <- liftAndCatchIO $ lookupEnv "ANTHROPIC_API_KEY"
+  case mKey of
+    Nothing -> json $ object
+      [ "status" .= ("no_key" :: String)
+      , "error"  .= ("ANTHROPIC_API_KEY is not set." :: String) ]
+    Just k -> do
+      r <- liftAndCatchIO $ realImageProbe k doStream size
+      json $ object [ "status" .= ("done" :: String), "result" .= r ]
+
 -- | A faithful reproduction of the request that fails.
 --
 -- Every passing probe so far sits in one of two boxes: long but with no real
@@ -565,18 +577,19 @@ silenceProbe rawKey n = do
 -- (imageProbe, 12 seconds, an 8x8 JPEG). The failing request is the cell
 -- neither covers -- a genuine photograph and a long wait together.
 --
--- static/probe.b64 is a real page from the evaluation corpus, downscaled to
--- roughly the size the browser produces, stored already base64-encoded so this
--- needs no encoder dependency. The prompt is the real one, so the model does
+-- static/probe-{xs,sm,md,lg}.b64 are one real page from the evaluation corpus
+-- at four resolutions -- 41, 68, 125 and 244 KB of base64 -- stored already
+-- encoded so this needs no encoder dependency. lg matches what the browser
+-- currently produces. The prompt is the real one, so the model does
 -- the real work and takes the real amount of time.
 --
 -- The streaming flag matters because that combination is untested too: the
 -- long probes that pass are all non-streaming, and the streaming probes that
 -- pass are all short.
-realImageProbe :: String -> Bool -> IO String
-realImageProbe rawKey doStream = do
+realImageProbe :: String -> Bool -> String -> IO String
+realImageProbe rawKey doStream size = do
   t0 <- getCurrentTime
-  rawB64 <- readFile "static/probe.b64"
+  rawB64 <- readFile ("static/probe-" ++ size ++ ".b64")
   prompt <- readFile promptFile
   let b64 = T.pack (filter (\c -> c /= '\n' && c /= '\r') rawB64)
       label = (if doStream then "streaming" else "non-streaming")
@@ -605,13 +618,19 @@ realImageProbe rawKey doStream = do
           $ setRequestHeader "content-type"      ["application/json"]
           $ setRequestHeader "x-api-key"         [BS.pack (trimKey rawKey)]
           $ setRequestHeader "anthropic-version" ["2023-06-01"]
-          $ initReq { HC.responseTimeout = HC.responseTimeoutMicro (180 * 1000000) }
+          -- 90 rather than the 180 the real call uses. A success takes about
+          -- twenty-five seconds and the observed failure about ten, so nothing
+          -- useful happens after ninety, and waiting three minutes per probe
+          -- makes this too slow to iterate on.
+          $ initReq { HC.responseTimeout = HC.responseTimeoutMicro (90 * 1000000) }
+  stage ("realprobe: " ++ label ++ "posting")
   outcome <- try (httpLBS req)
   t1 <- getCurrentTime
   let secs = show (round (realToFrac (diffUTCTime t1 t0) :: Double) :: Int) ++ "s"
+  stage ("realprobe: finished in " ++ secs)
   pure $ case outcome of
     Left e     -> label ++ "FAILED after " ++ secs ++ " -- "
-                  ++ take 90 (flatten (redact (displayException (e :: SomeException))))
+                  ++ briefly (flatten (redact (displayException (e :: SomeException))))
     Right resp -> label ++ "succeeded after " ++ secs ++ ", HTTP "
                   ++ show (getResponseStatusCode resp) ++ ", "
                   ++ show (BL.length (getResponseBody resp) `div` 1024) ++ " KB back"
@@ -711,6 +730,18 @@ assembleSSE body =
 -- inbound POST or in this handler after the API answers -- and there is no way
 -- to tell which from the outside. This makes the log say where it stopped
 -- rather than leaving it to be inferred.
+-- | The informative end of an http-client exception.
+--
+-- displayException on an HttpExceptionRequest renders the whole Request record
+-- first and names the actual fault last, so taking a prefix -- which is what
+-- these probes were doing -- keeps the boilerplate and discards the answer.
+-- ResponseTimeout and NoResponseDataReceived are quite different failures and
+-- the distinction was being truncated away.
+briefly :: String -> String
+briefly e = case break (== '}') (reverse e) of
+  (tailPart, _) -> let s = reverse tailPart
+                   in if null (dropWhile (== ' ') s) then take 120 e else take 120 s
+
 stage :: String -> IO ()
 stage msg = do
   t <- getCurrentTime
@@ -1103,7 +1134,8 @@ main = do
           imgs   <- liftAndCatchIO $ mapM (imageProbe k) [0, 400, 600]
           big    <- liftAndCatchIO $ mapM (bigImageProbe k) [1024, 4096]
           quiet  <- liftAndCatchIO $ mapM (silenceProbe k) [900, 1500, 2200, 3000]
-          real   <- liftAndCatchIO $ mapM (realImageProbe k) [False, True]
+          real   <- liftAndCatchIO $
+                      mapM (realImageProbe k False) ["xs", "sm", "md", "lg"]
           json $ object
             [ "status"  .= (either (const "failed") (const "ok") r :: String)
             , "tiny"    .= either id (\c -> "HTTP " ++ show c) r
@@ -1137,6 +1169,22 @@ main = do
                             \help because the silence falls before the first \
                             \token exists." :: String)
             ]
+
+    -- The reproduction on its own, so it can be run in thirty seconds rather
+    -- than behind two and a half minutes of probes that have already told us
+    -- what they have to tell.
+    --
+    --   /transcribe/realprobe         non-streaming, as the code was originally
+    --   /transcribe/realprobe/stream  streaming, as the code is now
+    get "/transcribe/realprobe"        $ runRealProbe False "lg"
+    get "/transcribe/realprobe/stream" $ runRealProbe True  "lg"
+    -- The ladder, one rung at a time: 41, 68, 125 and 244 KB of base64, the
+    -- same page photographed at four resolutions. If the small ones survive
+    -- and the large ones do not, downscaling harder in photo.html is a fix we
+    -- can ship today rather than waiting on Render.
+    get "/transcribe/realprobe/xs" $ runRealProbe False "xs"
+    get "/transcribe/realprobe/sm" $ runRealProbe False "sm"
+    get "/transcribe/realprobe/md" $ runRealProbe False "md"
 
     -- The selftest is a GET, so it exercises none of the inbound path: no
     -- large POST body, no proxy buffering it, no JSON decode of a quarter
