@@ -424,6 +424,42 @@ slowProbe rawKey = do
     Right resp -> "succeeded after " ++ secs ++ ", HTTP "
                   ++ show (getResponseStatusCode resp)
 
+-- | Large upload followed by a long wait: the one combination the other
+-- probes leave untested, and the only one that matches the real request.
+--
+-- The size probes are rejected instantly, so their connections never go
+-- quiet. The slow probe is tiny. A middlebox that drops a connection which
+-- falls silent after a substantial transfer would pass both and fail this.
+combinedProbe :: String -> Int -> IO String
+combinedProbe rawKey kb = do
+  t0 <- getCurrentTime
+  initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
+  let filler  = T.replicate (kb * 1024) "x"
+      payload = A.object
+        [ "model"      .= ("claude-sonnet-5" :: String)
+        , "max_tokens" .= (1500 :: Int)
+        , "thinking"   .= A.object [ "type" .= ("disabled" :: String) ]
+        , "messages"   .= [ A.object
+            [ "role"    .= ("user" :: String)
+            , "content" .= (T.concat
+                [ "Ignore the following padding entirely: ", filler
+                , "\n\nNow write out the numbers from 1 to 900, separated by \
+                  \commas. Output nothing else." ]) ] ]
+        ]
+      req = setRequestBodyLBS (A.encode payload)
+          $ setRequestHeader "content-type"      ["application/json"]
+          $ setRequestHeader "x-api-key"         [BS.pack (trimKey rawKey)]
+          $ setRequestHeader "anthropic-version" ["2023-06-01"]
+          $ initReq { HC.responseTimeout = HC.responseTimeoutMicro (180 * 1000000) }
+  outcome <- try (httpLBS req)
+  t1 <- getCurrentTime
+  let secs = show (round (realToFrac (diffUTCTime t1 t0) :: Double) :: Int) ++ "s"
+  pure $ case outcome of
+    Left e     -> show kb ++ " KB, FAILED after " ++ secs ++ ": "
+                  ++ take 80 (flatten (redact (displayException (e :: SomeException))))
+    Right resp -> show kb ++ " KB, succeeded after " ++ secs ++ ", HTTP "
+                  ++ show (getResponseStatusCode resp)
+
 -- | Run an action, retrying a failure a few times with a short pause.
 retrying :: Int -> IO (Either SomeException a) -> IO (Either SomeException a)
 retrying n act = do
@@ -815,17 +851,18 @@ main = do
           r      <- liftAndCatchIO $ tinyAnthropicCall k
           probes <- liftAndCatchIO $ mapM (sizeProbe k) [16, 64, 128, 256, 512]
           slow   <- liftAndCatchIO $ slowProbe k
+          comb   <- liftAndCatchIO $ mapM (combinedProbe k) [128, 400]
           json $ object
             [ "status"  .= (either (const "failed") (const "ok") r :: String)
             , "tiny"    .= either id (\c -> "HTTP " ++ show c) r
             , "bySize"  .= [ object [ "kb" .= kb, "result" .= res ]
                            | (kb, res) <- probes ]
-            , "slowRequest" .= slow
-            , "note"    .= ("The size probes are rejected instantly, so their \
-                            \connections are never idle. slowRequest is small \
-                            \but takes many seconds to answer. If that one \
-                            \fails, the idle period is the problem, not the \
-                            \payload." :: String)
+            , "slowRequest"     .= slow
+            , "largeAndSlow"    .= comb
+            , "note"    .= ("largeAndSlow is the combination that matches the \
+                            \real request: a substantial upload followed by a \
+                            \long silence. The other probes vary only one of \
+                            \those at a time and both pass." :: String)
             ]
 
     -- Photograph a proof, confirm the transcription, then check it
