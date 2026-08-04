@@ -37,6 +37,7 @@ import TruthTable
   )
 
 -- Utils & JSON
+import Control.Concurrent                  (threadDelay)
 import Control.Concurrent.MVar             (MVar, newMVar, modifyMVar)
 import Control.Exception                   (try, SomeException, displayException)
 import qualified Network.HTTP.Client       as HC
@@ -233,21 +234,18 @@ reportToJSON reps =
 --------------------------------------------------------------------------------
 
 -- | Split "data:image/jpeg;base64,AAAA" into ("image/jpeg", "AAAA").
-splitDataUrl :: String -> Maybe (String, String)
-splitDataUrl s = do
-  rest          <- stripPrefix' "data:" s
-  let (meta, enc) = break (== ',') rest
-  payload       <- case enc of
-                     (_:p) -> Just p
-                     []    -> Nothing
-  media         <- case break (== ';') meta of
-                     (m, ";base64") -> Just m
-                     _              -> Nothing
+--
+-- Text rather than String throughout. The payload is several hundred
+-- kilobytes of base64; as a String that is a linked list of Char at roughly
+-- twenty bytes each, traversed once per transformation. On a small instance
+-- the cost is enough to stall the request while it is being written.
+splitDataUrl :: T.Text -> Maybe (T.Text, T.Text)
+splitDataUrl t = do
+  rest <- T.stripPrefix "data:" t
+  let (meta, enc) = T.breakOn "," rest
+  payload <- if T.null enc then Nothing else Just (T.drop 1 enc)
+  media   <- T.stripSuffix ";base64" meta
   pure (media, payload)
-  where
-    stripPrefix' p xs
-      | take (length p) xs == p = Just (drop (length p) xs)
-      | otherwise               = Nothing
 
 -- | Concatenate the text blocks of a Messages API response, ignoring any
 -- thinking blocks.
@@ -321,7 +319,39 @@ transcriptionNotices pipe =
 trimKey :: String -> String
 trimKey = f . f where f = reverse . dropWhile (`elem` (" \t\r\n" :: String))
 
-callAnthropic :: String -> String -> String -> String -> IO (Either String A.Value)
+-- | Put a multi-line message on one line, so a truncated view of it still
+-- carries the informative part.
+flatten :: String -> String
+flatten = take 400 . unwords . words
+
+-- | Remove anything that looks like a credential.
+--
+-- http-client renders a failed request with every header included, so the
+-- API key lands in the log verbatim unless it is stripped here. Logs are
+-- readable by anyone with dashboard access and are retained; a key that
+-- reaches them has to be treated as compromised.
+redact :: String -> String
+redact = go
+  where
+    go [] = []
+    go xs@(c:rest)
+      | take 7 xs == "sk-ant-" = "sk-ant-***REDACTED***" ++ go (dropWhile keyChar xs)
+      | otherwise              = c : go rest
+    keyChar ch = ch `elem` ("-_" :: String)
+              || (ch >= 'a' && ch <= 'z')
+              || (ch >= 'A' && ch <= 'Z')
+              || (ch >= '0' && ch <= '9')
+
+-- | Run an action, retrying a failure a few times with a short pause.
+retrying :: Int -> IO (Either SomeException a) -> IO (Either SomeException a)
+retrying n act = do
+  r <- act
+  case r of
+    Right _              -> pure r
+    Left _ | n <= 1      -> pure r
+           | otherwise   -> threadDelay 1000000 >> retrying (n - 1) act
+
+callAnthropic :: String -> T.Text -> T.Text -> String -> IO (Either String A.Value)
 callAnthropic rawKey media b64 promptText = do
   let apiKey = trimKey rawKey
   initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
@@ -358,12 +388,20 @@ callAnthropic rawKey media b64 promptText = do
   -- Catch rather than let the exception escape as an unhandled 500: a network
   -- failure reaching the API is not an internal error, and the caller needs to
   -- be told which it was.
-  outcome <- try (httpLBS req)
+  -- NoResponseDataReceived and friends are transient: a pooled connection the
+  -- far end had already closed, or a connection dropped in flight. One retry
+  -- on a fresh connection clears the common case, and costs a second when it
+  -- does not.
+  putStrLn ("[transcribe] posting " ++ show (T.length b64 * 3 `div` 4 `div` 1024)
+            ++ " KB image to api.anthropic.com")
+  outcome <- retrying 2 (try (httpLBS req))
   case outcome of
     Left e -> do
-      let msg = displayException (e :: SomeException)
+      let msg = redact (displayException (e :: SomeException))
       putStrLn ("[transcribe] request to api.anthropic.com failed: " ++ msg)
-      pure (Left ("Could not reach the transcription service. " ++ takeWhile (/= '\n') msg))
+      -- The exception renders over several lines; collapse them rather than
+      -- truncating at the first newline, which leaves only "Request {".
+      pure (Left ("Could not reach the transcription service. " ++ flatten msg))
     Right resp -> do
       let code = getResponseStatusCode resp
           bodyL = getResponseBody resp
@@ -720,7 +758,7 @@ main = do
               status status400
               json $ object [ "status" .= ("bad_json" :: String), "error" .= perr ]
             Right dataUrl ->
-              case splitDataUrl (dataUrl :: String) of
+              case splitDataUrl (dataUrl :: T.Text) of
                 Nothing -> do
                   status status400
                   json $ object
