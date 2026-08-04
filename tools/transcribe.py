@@ -160,12 +160,43 @@ RULE_TOKENS = {
 }
 
 
-def rule_of(just: str) -> str:
+# How many line numbers each rule cites. Mirrors citedLines in ProofTypes.hs;
+# "prop taut" is the one rule that takes any number, including none.
+RULE_ARITY = {
+    "A": 0, "=I": 0, "LEM": 0,
+    "DN": 1, "∧E": 1, "∨I": 1, "∀E": 1, "∀I": 1, "∃I": 1, "QN": 1,
+    "MP": 2, "MT": 2, "CP": 2, "RAA": 2, "∧I": 2, "↔I": 2, "↔E": 2, "=E": 2,
+    "∃E": 3,
+    "∨E": 5,
+}
+
+
+def parse_just(just: str) -> tuple[str, int]:
+    """Split a justification cell into (rule, number of cited lines).
+
+    Returns ("", -1) if it is not even shaped like a justification. Handles the
+    "<m> ∀I x" form, where a bound variable trails the rule name.
+    """
     j = just.strip()
+    if not j:
+        return "", -1
     if j.endswith("prop taut"):
-        return "prop taut"
+        return "prop taut", _count_refs(j[: -len("prop taut")])
     parts = j.split()
-    return parts[-1] if parts else ""
+    if len(parts) == 3 and len(parts[2]) == 1 and parts[2].isalpha():
+        return parts[1], _count_refs(parts[0])      # <m> ∀I x
+    if len(parts) == 2:
+        return parts[1], _count_refs(parts[0])
+    if len(parts) == 1:
+        return parts[0], 0
+    return "", -1
+
+
+def _count_refs(head: str) -> int:
+    head = head.strip()
+    if not head:
+        return 0
+    return len([t for t in head.split(",") if t.strip()])
 
 
 def validate(pipe: str) -> list[str]:
@@ -206,10 +237,17 @@ def validate(pipe: str) -> list[str]:
             nums.append(int(ln))
         if not formula:
             problems.append(f"row {i}: the formula cell is empty")
-        tok = rule_of(just)
-        if tok not in RULE_TOKENS:
+        rule, nrefs = parse_just(just)
+        if rule not in RULE_TOKENS:
             problems.append(
-                f"row {i}: {tok!r} is not one of the allowed justifications"
+                f"row {i}: {just!r} is not one of the allowed justifications"
+            )
+        elif rule != "prop taut" and nrefs != RULE_ARITY[rule]:
+            want = RULE_ARITY[rule]
+            problems.append(
+                f"row {i}: {rule} cites {want} line{'' if want == 1 else 's'}, "
+                f"but {just!r} gives {nrefs}; either the rule name or the line "
+                f"numbers have been misread"
             )
     if nums:
         if nums[0] != 1:
@@ -223,7 +261,14 @@ def validate(pipe: str) -> list[str]:
     return problems
 
 
-def call_api(payload: dict, api_key: str, retries: int = 3) -> str:
+def call_api(payload: dict, api_key: str, retries: int = 3) -> tuple[str, dict]:
+    """Return (concatenated text, raw response).
+
+    The raw response is handed back so that a reply containing no text can be
+    diagnosed: an empty result may mean the model stopped at max_tokens, or
+    returned only non-text blocks, and the extracted string alone cannot tell
+    those apart.
+    """
     body = json.dumps(payload).encode()
     headers = {
         "content-type": "application/json",
@@ -236,10 +281,11 @@ def call_api(payload: dict, api_key: str, retries: int = 3) -> str:
         try:
             with urllib.request.urlopen(req, timeout=120) as resp:
                 data = json.load(resp)
-            return "".join(
+            text = "".join(
                 blk.get("text", "") for blk in data.get("content", [])
                 if blk.get("type") == "text"
             )
+            return text, data
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "replace")[:300]
             last = f"HTTP {e.code}: {detail}"
@@ -318,30 +364,40 @@ def main() -> int:
             print(f"{path.stem}: skipped (exists)")
             continue
         try:
+            raw: dict = {}
             if mock_reply is not None:
                 reply = mock_reply
                 pipe = extract_pipe(reply)
                 problems = validate(pipe) if pipe else ["no pipe rows in reply"]
             else:
                 media, b64 = encode_image(path)
-                reply = call_api(build_request(media, b64, args.model), api_key)
+                reply, raw = call_api(build_request(media, b64, args.model), api_key)
                 pipe = extract_pipe(reply)
                 problems = validate(pipe) if pipe else ["no pipe rows in reply"]
                 if problems:
                     # One more look at the image, told what went wrong.
                     note = "\n".join("- " + p for p in problems)
                     print(f"{path.stem}: retrying ({len(problems)} problem(s))")
-                    reply2 = call_api(
+                    reply2, raw2 = call_api(
                         build_request(media, b64, args.model, feedback=note), api_key
                     )
                     pipe2 = extract_pipe(reply2)
                     problems2 = validate(pipe2) if pipe2 else ["no pipe rows in reply"]
                     # Keep the retry only if it is no worse than the first try.
                     if pipe2 and len(problems2) <= len(problems):
-                        reply, pipe, problems = reply2, pipe2, problems2
+                        reply, raw, pipe, problems = reply2, raw2, pipe2, problems2
+                    elif not pipe:
+                        raw = raw2  # nothing usable either way; keep the later one
             if not pipe:
-                (args.out / f"{path.stem}.raw.txt").write_text(reply)
-                raise RuntimeError("no pipe rows in reply (raw reply saved)")
+                dump = args.out / f"{path.stem}.raw.json"
+                dump.write_text(json.dumps(raw, indent=2, ensure_ascii=False))
+                stop = raw.get("stop_reason")
+                kinds = [b.get("type") for b in raw.get("content", [])]
+                usage = raw.get("usage", {})
+                raise RuntimeError(
+                    f"no text in reply (stop_reason={stop}, blocks={kinds}, "
+                    f"usage={usage}); full response in {dump.name}"
+                )
             dest.write_text(pipe)
             note = f"  [{len(problems)} unresolved]" if problems else ""
             print(f"{path.stem}: {len(pipe.splitlines())} lines{note}")
