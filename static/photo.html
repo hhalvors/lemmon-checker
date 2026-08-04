@@ -161,23 +161,50 @@
     });
   }
 
+  // Safari has needed three attempts historically: createImageBitmap with an
+  // options object (rejected by older iOS), createImageBitmap without it, and
+  // finally an <img> element, which works everywhere. Getting this wrong means
+  // silently uploading a four-megabyte photo, which is what made the first
+  // attempt from a phone fail.
+  function drawToDataUrl(src, w, h) {
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(src, 0, 0, w, h);
+    return canvas.toDataURL('image/jpeg', 0.85);
+  }
+
+  function scaled(w, h) {
+    const k = Math.min(1, MAX_EDGE / Math.max(w, h));
+    return [Math.round(w * k), Math.round(h * k), k];
+  }
+
+  function viaImageElement(f) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(f);
+      const img = new Image();
+      img.onload = () => {
+        const [w, h] = scaled(img.naturalWidth, img.naturalHeight);
+        try { resolve(drawToDataUrl(img, w, h)); }
+        catch (e) { reject(e); }
+        finally { URL.revokeObjectURL(url); }
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('could not decode the image')); };
+      img.src = url;
+    });
+  }
+
   async function shrunkDataUrl(f) {
-    try {
-      // imageOrientation honours the EXIF rotation phones record rather than
-      // applying; without it a portrait photo can arrive on its side.
-      const bmp = await createImageBitmap(f, { imageOrientation: 'from-image' });
-      const scale = Math.min(1, MAX_EDGE / Math.max(bmp.width, bmp.height));
-      if (scale === 1) { bmp.close?.(); return dataUrlOf(f); }
-      const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
-      const canvas = document.createElement('canvas');
-      canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(bmp, 0, 0, w, h);
-      bmp.close?.();
-      return canvas.toDataURL('image/jpeg', 0.9);
-    } catch (e) {
-      // Older browser, or a format canvas will not take: send it as it is.
-      return dataUrlOf(f);
+    for (const opts of [{ imageOrientation: 'from-image' }, undefined]) {
+      try {
+        const bmp = opts ? await createImageBitmap(f, opts) : await createImageBitmap(f);
+        const [w, h] = scaled(bmp.width, bmp.height);
+        const out = drawToDataUrl(bmp, w, h);
+        bmp.close?.();
+        return out;
+      } catch (e) { /* try the next approach */ }
     }
+    try { return await viaImageElement(f); }
+    catch (e) { return dataUrlOf(f); }   // last resort: send it as it is
   }
 
   readBtn.addEventListener('click', async () => {
@@ -187,12 +214,29 @@
     setStatus(''); clearResults(); notices.classList.add('hidden');
 
     try {
+      const dataUrl = await shrunkDataUrl(f);
+      const kb = Math.round(dataUrl.length * 3 / 4 / 1024);
+      setStatus('Reading a ' + kb + ' KB image\u2026');
+
       const res = await fetch('/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dataUrl: await shrunkDataUrl(f) })
+        body: JSON.stringify({ dataUrl })
       });
-      const data = await res.json();
+
+      const body = await res.text();
+      let data;
+      try {
+        data = JSON.parse(body);
+      } catch (e) {
+        // Not JSON: almost always an error page from the proxy in front of
+        // the app. Show the status and a snippet rather than a bare parse
+        // error, which says nothing about what went wrong.
+        setStatus('The server returned HTTP ' + res.status + ' rather than a '
+                  + 'result. ' + body.replace(/<[^>]*>/g, ' ').trim().slice(0, 120),
+                  'bad');
+        return;
+      }
 
       if (data.status !== 'ok') {
         setStatus((data.error || data.status || 'could not read the photo'), 'bad');
@@ -253,7 +297,16 @@
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: proof
       });
-      const data = await res.json();
+      const body = await res.text();
+      let data;
+      try {
+        data = JSON.parse(body);
+      } catch (e) {
+        overall.style.display = 'block';
+        overall.innerHTML = '<span class="bad">The server returned HTTP '
+          + res.status + ' rather than a result.</span>';
+        return;
+      }
 
       overall.style.display = 'block';
       if (data.status !== 'ok') {

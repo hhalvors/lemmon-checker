@@ -1,0 +1,50 @@
+This is a photograph of a handwritten natural-deduction proof on a printed template. The page may be rotated by 90 degrees.
+
+The template is a four-column table: Depends | (Line) | Formula | Justification. The line numbers (1) to (19) are pre-printed, so most rows are blank. Transcribe only the rows the student has written in.
+
+Output one line per filled row, in exactly this format:
+
+  <depends>|<line>|<formula>|<justification>
+
+depends
+    Comma-separated line numbers, e.g. 1,2 — or empty if the cell is blank.
+    An empty dependency cell is meaningful; leave the field empty, do not omit it.
+
+line
+    The pre-printed line number, digits only.
+
+formula
+    Use the symbols ¬ ∧ ∨ → ↔ ∀ ∃ =. Predicates are capital letters and their
+    terms are lower-case letters written straight after them: Fa, Fx, Rab.
+    Reproduce the parentheses as written.
+
+justification
+    Exactly one of these forms, where <m>, <n> are line numbers:
+
+  A
+  <m>,<n> MP        <m>,<n> MT        <m> DN            <m>,<n> CP
+  <m>,<n> ∧I        <m> ∧E            <m> ∨I            <d>,<a1>,<c1>,<a2>,<c2> ∨E
+  <m>,<n> RAA       <m> ∀E            <m> ∀I            <m> ∃I
+  <m>,<a>,<n> ∃E    <m>,<n> ↔I        <m>,<n> ↔E        <m> QN
+  =I                <m>,<n> =E        LEM               prop taut
+
+    The page may use variant spellings — cP for CP, UI or uI for ∀I, EI for
+    ∃I, ANDI for ∧I, v for ∨. Map those to the canonical forms above. That is
+    the only normalising you should do.
+
+START AT ROW (1). The first data row sits immediately below the shaded header
+band, and its Depends cell is often a single small digit close to that band.
+It is easy to mistake for part of the header. It is not: read it. Every output
+row must have a line number, and the rows you output must be consecutive
+starting from 1.
+
+TRANSCRIBE EXACTLY WHAT IS WRITTEN, INCLUDING MISTAKES. This transcription is
+fed to a proof checker that reports errors back to the student. If a
+justification looks wrong for the formula on that row, or a dependency set
+looks incorrect, write down what is on the page regardless. Do not correct,
+complete, or tidy up the proof. A transcription that silently repairs an error
+is worse than useless, because the student is then told their mistake is fine.
+
+If a cell is genuinely illegible, write ??? in it rather than guessing.
+
+Output only the pipe lines. No commentary, no code fence, no header row.

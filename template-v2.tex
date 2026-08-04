@@ -1,0 +1,121 @@
+% Natural Deduction Proof Template, revision 2.
+%
+% Build with:   pdflatex template-v2.tex && mv template-v2.pdf static/template.pdf
+% The site serves it from static/ at /template; keep the two in step.
+%
+% Revised for legibility to the transcription pipeline (tools/transcribe.py and
+% the /transcribe route in Web.hs). Every change answers a failure actually
+% observed on the sixteen-page evaluation corpus, not a general principle.
+%
+%   * No shaded band above row (1). The grey header fill caused the most
+%     persistent bug of the lot: the lone "1" in the first Depends cell sits
+%     against that band and was repeatedly swallowed as part of the header, or
+%     the whole first row was dropped. A double rule and a gap separate the
+%     header instead.
+%
+%   * The Depends convention is printed in the column head. Blank dependency
+%     cells were the one place the reader invented content, writing a "1" that
+%     was not on the page. Naming the convention makes an empty cell a
+%     deliberate mark rather than an apparent omission.
+%
+%   * A rule legend at the foot. Misread rule names were the commonest
+%     remaining error -- "cP" for CP, "uI" for UI, "IMP" for MP. Printing the
+%     vocabulary puts the canonical spellings in front of the student as they
+%     write, and inside the photograph as the model reads.
+%
+%   * A wider Justification column. "1,2,3,4,5 vE" did not sit comfortably in
+%     the old 2.5cm, and cramped writing is misread writing.
+%
+%   * Heavier rules, no grey anywhere. These are photographed on a desk in
+%     ordinary room light; 0.3pt hairlines lose contrast badly.
+%
+%   * A version mark in the corner, so a photograph can be traced back to the
+%     template that produced it as the evaluation corpus grows.
+
+\documentclass[11pt]{article}
+\usepackage[top=0.45in,bottom=0.4in,left=0.55in,right=0.55in]{geometry}
+\usepackage{array}
+\usepackage{amssymb}
+
+% Row height: tall enough that a negation stroke or a subscript does not touch
+% the rule above.
+\renewcommand{\arraystretch}{1.82}
+
+% Rules heavy enough to survive a phone photograph.
+\setlength{\arrayrulewidth}{0.8pt}
+
+\newcommand{\colhead}[1]{\textbf{\large #1}}
+
+% If you would rather students marked "no dependencies" explicitly than left
+% the cell blank, replace this with
+%   \newcommand{\emptyhint}{\footnotesize\itshape write $\emptyset$ if none}
+% An explicit mark is easier for a reader -- human or machine -- to tell from
+% an unfilled cell. It departs from the convention in the book, so it is your
+% call rather than mine.
+\newcommand{\emptyhint}{\footnotesize\itshape (blank = none)}
+
+\begin{document}
+\thispagestyle{empty}
+
+\noindent
+{\Large\textbf{Natural Deduction Proof}}
+\hfill
+{\footnotesize Name:\ \rule{3.6cm}{0.4pt}\qquad Exercise:\ \rule{2.4cm}{0.4pt}}
+
+\vspace{1mm}
+\noindent\rule{\textwidth}{1.2pt}
+\vspace{2mm}
+
+% Outer rules as well as inner ones: a closed box makes the column
+% boundaries unambiguous, which is what the reader keys on.
+\noindent\begin{tabular}{|
+  >{\raggedright\arraybackslash}p{2.6cm}|
+  >{\centering\arraybackslash}p{1.1cm}|
+  >{\raggedright\arraybackslash}p{9.5cm}|
+  >{\raggedright\arraybackslash}p{3.5cm}|
+}
+\hline
+\colhead{Depends} & \colhead{Line} & \colhead{Formula} & \colhead{Justification} \\[-3.2mm]
+{\emptyhint} & & & \\
+\hline\hline
+& (1)  & & \\ \hline
+& (2)  & & \\ \hline
+& (3)  & & \\ \hline
+& (4)  & & \\ \hline
+& (5)  & & \\ \hline
+& (6)  & & \\ \hline
+& (7)  & & \\ \hline
+& (8)  & & \\ \hline
+& (9)  & & \\ \hline
+& (10) & & \\ \hline
+& (11) & & \\ \hline
+& (12) & & \\ \hline
+& (13) & & \\ \hline
+& (14) & & \\ \hline
+& (15) & & \\ \hline
+& (16) & & \\ \hline
+& (17) & & \\ \hline
+& (18) & & \\ \hline
+& (19) & & \\ \hline
+\end{tabular}
+
+\vspace{3mm}
+
+\noindent\rule{\textwidth}{0.8pt}
+\smallskip
+
+\noindent{\footnotesize\textbf{Rules.}\ Write the rule exactly as printed here.
+\ ($m$, $n$ stand for line numbers.)}
+
+\smallskip
+\noindent{\footnotesize
+\begin{tabular}{@{}l@{\hspace{7mm}}l@{\hspace{7mm}}l@{\hspace{7mm}}l@{\hspace{7mm}}l@{}}
+A                & $m,n$ MP  & $m,n$ MT   & $m$ DN            & $m,n$ CP \\
+$m,n$ $\wedge$I  & $m$ $\wedge$E & $m$ $\vee$I & $m,n$ RAA     & $m$ QN \\
+$m$ $\forall$E   & $m$ $\forall$I & $m$ $\exists$I & $m,a,n$ $\exists$E & $d,a_1,c_1,a_2,c_2$ $\vee$E \\
+$m,n$ $\leftrightarrow$I & $m,n$ $\leftrightarrow$E & =I & $m,n$ =E & LEM \\
+\end{tabular}}
+
+\hfill{\tiny HLW-2}
+
+\end{document}
