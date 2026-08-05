@@ -10,35 +10,41 @@
    where something is clickable.
    ========================================================================= */
 
+/* Inter, as hanshalvorson.com uses. Imported here rather than added to every
+   page's <head>, since these pages have no shared template. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400..750&display=swap');
+
 :root {
-  /* Neutrals, slightly cool so the accent sits naturally against them */
-  --bg:          #f6f7f9;
+  /* White, not grey. The personal site puts content straight onto the page
+     and the grey field here was the loudest difference between the two. */
+  --bg:          #ffffff;
   --surface:     #ffffff;
-  --surface-2:   #f2f4f7;
-  --border:      #e2e6ec;
-  --border-firm: #cfd5de;
+  --surface-2:   #f7f7f8;
+  --border:      #e5e5e5;
+  --border-firm: #d4d4d4;
 
-  --text:        #1c2430;
-  --text-muted:  #5b6675;
-  --text-faint:  #838d9b;
+  --text:        #1a1a1a;
+  --text-muted:  #595959;
+  --text-faint:  #8a8a8a;
 
-  /* One accent, for links, focus and primary actions */
-  --accent:      #3a4fa8;
-  --accent-dark: #2c3d85;
-  --accent-soft: #eef1fb;
+  /* Solarized blue, the link colour inherited from Poole on the main site */
+  --accent:      #268bd2;
+  --accent-dark: #1a6fa8;
+  --accent-soft: #eef6fc;
 
   --ok:          #10683a;  --ok-soft:   #eaf6ee;
   --bad:         #a3182b;  --bad-soft:  #fdeef0;
   --warn:        #8a5a00;  --warn-soft: #fdf5e6;
 
-  --radius:      10px;
-  --radius-sm:   6px;
-  --shadow:      0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.06);
+  --radius:      8px;
+  --radius-sm:   5px;
+  /* The personal site has no drop shadows anywhere. Kept as a variable so the
+     rules below need not change, but set to nothing. */
+  --shadow:      none;
 
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
-          Arial, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
-          monospace;
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Helvetica, Arial, sans-serif;
+  --mono: Menlo, Monaco, "Courier New", ui-monospace, SFMono-Regular, monospace;
 
   --measure: 68ch;     /* comfortable reading width for prose */
   --page:    1080px;   /* outer width for tool pages */
@@ -46,19 +52,20 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg:          #14171c;
-    --surface:     #1b1f26;
-    --surface-2:   #232830;
-    --border:      #2c323b;
-    --border-firm: #3a424e;
+    /* Matching the personal site's dark mode: #121212 ground, #8ab4f8 links */
+    --bg:          #121212;
+    --surface:     #121212;
+    --surface-2:   #1d1d1d;
+    --border:      #333333;
+    --border-firm: #444444;
 
-    --text:        #e6eaf0;
-    --text-muted:  #a4aebc;
-    --text-faint:  #7d8794;
+    --text:        #e5e5e5;
+    --text-muted:  #a8a8a8;
+    --text-faint:  #808080;
 
-    --accent:      #93a6ee;
-    --accent-dark: #b1bff5;
-    --accent-soft: #212739;
+    --accent:      #8ab4f8;
+    --accent-dark: #a9c8fa;
+    --accent-soft: #1a2233;
 
     --ok:          #6fd39b;  --ok-soft:   #16281e;
     --bad:         #f4919d;  --bad-soft:  #2a1a1d;
@@ -74,26 +81,34 @@
 
 html { -webkit-text-size-adjust: 100%; }
 
+/* 18px rather than the personal site's 20px. The prose there is a column of
+   text; these pages carry proof tables and formula input, where 20px starts
+   to wrap awkwardly. Close enough that the two do not feel unrelated. */
 body {
   margin: 0;
   font-family: var(--font);
-  font-size: 16px;
-  line-height: 1.6;
+  font-size: 18px;
+  line-height: 1.55;
   color: var(--text);
   background: var(--bg);
+  font-optical-sizing: auto;
   -webkit-font-smoothing: antialiased;
 }
 
-h1, h2, h3, h4 { line-height: 1.25; font-weight: 650; margin: 0 0 .5em; }
-h1 { font-size: 1.75rem; letter-spacing: -.015em; }
-h2 { font-size: 1.25rem; margin-top: 2rem; }
-h3 { font-size: 1.05rem; margin-top: 1.5rem; }
+/* Weights and tracking from the personal site: heavier and tighter than the
+   defaults here were, which is most of what made the two look unrelated. */
+h1, h2, h3, h4 { line-height: 1.2; letter-spacing: -.01em; margin: 0 0 .6em; }
+h1 { font-size: 2rem;    font-weight: 750; }
+h2 { font-size: 1.45rem; font-weight: 720; margin-top: 2.2rem; }
+h3 { font-size: 1.15rem; font-weight: 650; margin-top: 1.6rem; }
+h4 { font-size: 1rem;    font-weight: 650; }
 
-p  { margin: 0 0 1rem; max-width: var(--measure); }
+p  { margin: 0 0 1.1rem; max-width: var(--measure); }
 ul, ol { max-width: var(--measure); }
 
-a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
-a:hover { color: var(--accent-dark); }
+/* Underline on hover only, as on the personal site. */
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-dark); text-decoration: underline; }
 
 hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 
@@ -123,15 +138,17 @@ header.site {
   flex-wrap: wrap;
 }
 
+/* Echoing the masthead on hanshalvorson.com: a heavy name, quiet everything
+   else, no colour until you point at it. */
 .brand {
-  font-weight: 680;
-  font-size: 1rem;
+  font-weight: 750;
+  font-size: 1.05rem;
   color: var(--text);
   text-decoration: none;
   white-space: nowrap;
   letter-spacing: -.01em;
 }
-.brand:hover { color: var(--accent); }
+.brand:hover { color: var(--accent); text-decoration: none; }
 
 header.site nav {
   display: flex;
@@ -150,7 +167,8 @@ header.site nav a {
   border-radius: var(--radius-sm);
   white-space: nowrap;
 }
-header.site nav a:hover { color: var(--text); background: var(--surface-2); }
+header.site nav a:hover { color: var(--text); background: var(--surface-2);
+                          text-decoration: none; }
 header.site nav a[aria-current="page"],
 header.site nav a.active { color: var(--accent); background: var(--accent-soft); }
 
@@ -208,7 +226,8 @@ button, .btn, a.button {
   cursor: pointer;
   transition: background .12s ease, border-color .12s ease;
 }
-button:hover, .btn:hover, a.button:hover { background: var(--accent-dark); color: #fff; }
+button:hover, .btn:hover, a.button:hover { background: var(--accent-dark);
+                                           color: #fff; text-decoration: none; }
 button:disabled, .btn:disabled { opacity: .5; cursor: not-allowed; background: var(--accent); }
 
 /* Secondary: present, but not competing with the primary action */
@@ -248,8 +267,10 @@ button:disabled, .btn:disabled { opacity: .5; cursor: not-allowed; background: v
   box-shadow: var(--shadow);
   transition: border-color .12s ease, transform .12s ease;
 }
-.tile:hover { border-color: var(--accent); color: var(--text); transform: translateY(-1px); }
-.tile-name { display: block; font-weight: 620; margin-bottom: .15rem; }
+.tile:hover { border-color: var(--accent); color: var(--text);
+              transform: translateY(-1px); text-decoration: none; }
+.tile-name { display: block; font-weight: 650; letter-spacing: -.01em;
+             margin-bottom: .15rem; }
 .tile-desc { display: block; color: var(--text-muted); font-size: .9rem; line-height: 1.45; }
 
 /* ---------- forms ------------------------------------------------------ */
@@ -387,10 +408,11 @@ kbd {
 /* ---------- small screens ---------------------------------------------- */
 
 @media (max-width: 600px) {
-  body { font-size: 15px; }
+  body { font-size: 16px; }
   main { padding: 1.5rem 1rem 3rem; }
   .card { padding: 1.15rem; border-radius: 8px; }
-  h1 { font-size: 1.45rem; }
+  h1 { font-size: 1.6rem; }
+  h2 { font-size: 1.25rem; }
   .site-inner { padding: .55rem 1rem; gap: .5rem; }
   header.site nav { margin-left: 0; width: 100%; }
 }
