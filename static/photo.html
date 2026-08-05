@@ -15,6 +15,36 @@
     #pipeText{width:100%;min-height:16rem;resize:vertical;line-height:1.5}
 .notices ul{margin:.3rem 0 0 1.1rem;padding:0}
     .notices li{margin:.15rem 0}
+
+    /* --- choosing a photo -------------------------------------------------
+       The default file input is a small grey control that renders in the
+       browser's own language -- "Vælg arkiv / intet arkiv valgt" on a Danish
+       phone -- and gives no hint that a camera is involved. It is replaced by
+       two labels styled as buttons, each wrapping a hidden input: one with
+       capture= to open the camera, one without to reach the library. Labels
+       are used rather than buttons so the picker opens from a direct user
+       gesture, which iOS requires. */
+    .pickers{display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin:.25rem 0 0}
+    @media (max-width:32rem){ .pickers{grid-template-columns:1fr} }
+    .picker{min-height:3.25rem;font-size:1rem;padding:.75rem 1rem;
+            text-align:center;cursor:pointer;-webkit-tap-highlight-color:transparent}
+    .picker input{position:absolute;width:1px;height:1px;opacity:0;
+                  pointer-events:none;clip:rect(0 0 0 0)}
+    .picker svg{width:1.15rem;height:1.15rem;flex:none}
+    .picker:active{opacity:.85}
+
+    /* Collapsed by default so the buttons are the first thing on a phone. */
+    details.intro{margin:0 0 1rem}
+    details.intro summary{cursor:pointer;font-weight:600;color:var(--accent);
+                          list-style:none;padding:.35rem 0}
+    details.intro summary::-webkit-details-marker{display:none}
+    details.intro summary::after{content:" ▸";font-size:.85em}
+    details.intro[open] summary::after{content:" ▾"}
+    details.intro p{margin-top:.5rem}
+
+    /* Nothing to show until a photo has been chosen. */
+    .panes.idle{display:none}
+    #shot{max-height:70vh;object-fit:contain}
 </style>
 </head>
 <body>
@@ -34,31 +64,53 @@
 <main>
     <h1 class="page-title">Check a Photographed Proof</h1>
     <section class="card">
-      <p class="hint">
-        Photograph your completed proof template, check that the transcription
-        below matches what you wrote, and correct it if it does not. Only then
-        is the proof checked — so a misreading costs you an edit, not a wrong
-        answer. Pay particular attention to the <strong>Depends</strong>
-        column: a blank cell there is meaningful, and it is the column most
-        often got wrong.
-      </p>
+      <div class="pickers">
+        <!-- capture= opens the camera directly on a phone. Without it the same
+             control reaches the photo library, which is what you want for a
+             picture taken earlier, or on a desktop. -->
+        <label class="btn picker">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+          Take a photo
+          <input id="fileCam" type="file" accept="image/*" capture="environment" />
+        </label>
 
-      <p class="hint">
+        <label class="btn quiet picker">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <path d="M21 15l-5-5L5 21"/>
+          </svg>
+          Choose a photo
+          <input id="filePick" type="file" accept="image/*" />
+        </label>
+      </div>
+
+      <p class="hint" style="margin:.6rem 0 0">
+        Reading starts as soon as you choose a picture.
         Need a blank sheet? <a href="/template">Print the proof template</a> —
         proofs written on it are read more reliably than proofs on plain paper.
       </p>
 
-      <div class="row">
-        <!-- capture= opens the camera directly on a phone; on a desktop it is
-             an ordinary file picker. -->
-        <input id="file" type="file" accept="image/*" capture="environment" />
-        <button id="readBtn" class="btn" disabled>Read the photo</button>
-        <span id="spin" class="hint" style="display:none">Reading…</span>
-      </div>
+      <div id="status" style="margin-top:.6rem"></div>
+      <span id="spin" class="hint" style="display:none">Reading…</span>
 
-      <div id="status" style="margin-top:.5rem"></div>
+      <details class="intro">
+        <summary>What happens next</summary>
+        <p class="hint">
+          The photograph is read, and the transcription appears beside it for
+          you to check and correct. Only then is the proof checked — so a
+          misreading costs you an edit, not a wrong answer. Pay particular
+          attention to the <strong>Depends</strong> column: a blank cell there
+          is meaningful, and it is the column most often got wrong.
+        </p>
+      </details>
 
-      <div class="panes">
+      <div class="panes idle">
         <div class="pane">
           <h2>Your photo</h2>
           <img id="shot" alt="the proof you photographed" />
@@ -102,12 +154,12 @@
 (function () {
   "use strict";
   const $ = id => document.getElementById(id);
-  const file = $('file'), readBtn = $('readBtn'), checkBtn = $('checkBtn'),
+  const fileCam = $('fileCam'), filePick = $('filePick'), checkBtn = $('checkBtn'),
         revertBtn = $('revertBtn'), spin = $('spin'), statusEl = $('status'),
         shot = $('shot'), noshot = $('noshot'), pipeText = $('pipeText'),
         notices = $('notices'), noticeList = $('noticeList'),
         overall = $('overall'), table = $('lineTable'), tbody = $('lineBody'),
-        editedFlag = $('editedFlag');
+        editedFlag = $('editedFlag'), panes = document.querySelector('.panes');
 
   let original = "";      // what the reader produced, for "undo my edits"
 
@@ -125,17 +177,31 @@
 
   // --- choosing a photo ----------------------------------------------------
 
-  file.addEventListener('change', () => {
-    const f = file.files && file.files[0];
-    readBtn.disabled = !f;
-    setStatus('');
-    clearResults();
-    if (f) {
+  // Choosing a picture is the whole gesture: there is no second button to
+  // press. The old flow was choose-then-read, which on a phone meant two taps
+  // separated by a control that gave no sign it was waiting for you.
+  function chosen(input) {
+    return () => {
+      const f = input.files && input.files[0];
+      if (!f) return;
+      // Clear the other input so a later change event cannot fire with a
+      // stale file behind this one.
+      (input === fileCam ? filePick : fileCam).value = '';
+      setStatus('');
+      clearResults();
+      panes.classList.remove('idle');
       shot.src = URL.createObjectURL(f);
       shot.style.display = 'block';
       noshot.style.display = 'none';
-    }
-  });
+      read(f);
+      // Reset afterwards so that choosing the same file again still fires a
+      // change event — otherwise retaking one photo appears to do nothing.
+      // read() already holds its own reference to the File.
+      input.value = '';
+    };
+  }
+  fileCam.addEventListener('change', chosen(fileCam));
+  filePick.addEventListener('change', chosen(filePick));
 
   // Tap the photo to enlarge it — the point of the confirmation step is being
   // able to compare against what is actually on the page.
@@ -207,10 +273,12 @@
     catch (e) { return dataUrlOf(f); }   // last resort: send it as it is
   }
 
-  readBtn.addEventListener('click', async () => {
-    const f = file.files && file.files[0];
-    if (!f) return;
-    readBtn.disabled = true; spin.style.display = 'inline';
+  let reading = false;
+
+  async function read(f) {
+    if (!f || reading) return;
+    reading = true;
+    spin.style.display = 'inline';
     setStatus(''); clearResults(); notices.classList.add('hidden');
 
     try {
@@ -249,12 +317,14 @@
       revertBtn.style.display = 'none';
       showNotices(data.notices || []);
       setStatus('Read. Please check it against your photo before continuing.', 'ok');
+      pipeText.focus({ preventScroll: true });
+      pipeText.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (err) {
       setStatus('Network error: ' + String(err), 'bad');
     } finally {
-      readBtn.disabled = false; spin.style.display = 'none';
+      reading = false; spin.style.display = 'none';
     }
-  });
+  }
 
   // Anything the reader was unsure about, surfaced rather than buried.
   function showNotices(list) {
