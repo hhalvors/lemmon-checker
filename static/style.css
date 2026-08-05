@@ -115,62 +115,138 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 /* A visible ring for keyboard users only */
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
 
-/* ---------- header and navigation ------------------------------------ */
-/* One compact bar, not a tall banner above a separate nav strip. The old
-   nav was a flex row that could not wrap, so on a narrow window the links
-   were simply clipped off the left edge. */
+/* ---------- sidebar, masthead and the hamburger ------------------------
+   Ported from the Lanyon theme used by hanshalvorson.com, so the two sites
+   are navigated the same way. The mechanism is a hidden checkbox: the label
+   toggles it, and sibling selectors slide the sidebar, the content wrapper
+   and the toggle itself to the right. No JavaScript, and no change to the
+   URL, so the back button is not polluted.
 
-header.site {
-  background: var(--surface);
+   The order in the markup matters. #sidebar-checkbox must precede .sidebar,
+   .wrap and .sidebar-toggle for the ~ selectors below to reach them. */
+
+.wrap { position: relative; width: 100%; }
+
+.masthead {
+  padding: .75rem 0;
+  margin-bottom: 1.25rem;
   border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
-  z-index: 20;
 }
-
-.site-inner {
+.masthead-inner {
   max-width: var(--page);
   margin: 0 auto;
-  padding: .6rem 1.25rem;
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  flex-wrap: wrap;
+  padding: 0 1.25rem;
 }
-
-/* Echoing the masthead on hanshalvorson.com: a heavy name, quiet everything
-   else, no colour until you point at it. */
-.brand {
+.masthead-title {
+  margin: 0;
+  font-size: 1.15rem;
   font-weight: 750;
-  font-size: 1.05rem;
-  color: var(--text);
-  text-decoration: none;
-  white-space: nowrap;
   letter-spacing: -.01em;
+  color: var(--text);
 }
-.brand:hover { color: var(--accent); text-decoration: none; }
-
-header.site nav {
-  display: flex;
-  flex-wrap: wrap;          /* the fix for the clipped links */
-  align-items: center;
-  gap: .25rem;
-  margin-left: auto;
+.masthead-title a { color: var(--text); text-decoration: none; }
+.masthead-title a:hover { color: var(--accent); text-decoration: none; }
+.masthead-title small {
+  font-size: 75%;
+  font-weight: 400;
+  color: var(--text-faint);
+  letter-spacing: 0;
+  margin-left: .35rem;
+}
+@media (max-width: 48em) {
+  .masthead-title { text-align: center; }
+  .masthead-title small { display: none; }
 }
 
-header.site nav a {
-  color: var(--text-muted);
+.sidebar {
+  position: fixed;
+  top: 0; bottom: 0;
+  left: -14rem;
+  width: 14rem;
+  visibility: hidden;
+  overflow-y: auto;
+  font-size: .875rem;
+  color: rgba(255,255,255,.6);
+  background-color: #202020;
+  transition: all .3s ease-in-out;
+}
+.sidebar a { font-weight: normal; color: #fff; text-decoration: none; }
+.sidebar-item { padding: 1rem; }
+.sidebar-item p { margin-bottom: 0; font-size: .875rem; line-height: 1.5; }
+
+.sidebar-nav { border-bottom: 1px solid rgba(255,255,255,.1); }
+.sidebar-nav-item {
+  display: block;
+  padding: .5rem 1rem;
+  border-top: 1px solid rgba(255,255,255,.1);
+}
+.sidebar-nav-item.active,
+a.sidebar-nav-item:hover,
+a.sidebar-nav-item:focus {
   text-decoration: none;
-  font-size: .9rem;
-  font-weight: 500;
-  padding: .35rem .6rem;
-  border-radius: var(--radius-sm);
-  white-space: nowrap;
+  background-color: rgba(255,255,255,.1);
+  border-color: transparent;
 }
-header.site nav a:hover { color: var(--text); background: var(--surface-2);
-                          text-decoration: none; }
-header.site nav a[aria-current="page"],
-header.site nav a.active { color: var(--accent); background: var(--accent-soft); }
+/* A rule above the group that leaves the tools for the personal site. */
+.sidebar-nav-item.offsite { border-top-width: 3px; }
+
+@media (min-width: 48em) {
+  .sidebar-item { padding: 1.5rem; }
+  .sidebar-nav-item { padding-left: 1.5rem; padding-right: 1.5rem; }
+}
+
+.sidebar-checkbox {
+  position: absolute;
+  opacity: 0;
+  user-select: none;
+}
+
+.sidebar-toggle {
+  position: absolute;
+  top: .8rem;
+  left: 1rem;
+  display: flex;
+  align-items: center;
+  padding: .25rem .75rem;
+  color: var(--text-muted);
+  background-color: var(--surface);
+  border-radius: .25rem;
+  cursor: pointer;
+  z-index: 11;
+}
+.sidebar-toggle::before {
+  display: inline-block;
+  width: 32px; height: 32px;
+  content: "";
+  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 16 16' fill='%23555' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' d='M2.5 11.5A.5.5 0 013 11h10a.5.5 0 010 1H3a.5.5 0 01-.5-.5zm0-4A.5.5 0 013 7h10a.5.5 0 010 1H3a.5.5 0 01-.5-.5zm0-4A.5.5 0 013 3h10a.5.5 0 010 1H3a.5.5 0 01-.5-.5z' clip-rule='evenodd'/%3E%3C/svg%3E") no-repeat;
+}
+.sidebar-toggle:active,
+#sidebar-checkbox:focus ~ .sidebar-toggle,
+#sidebar-checkbox:checked ~ .sidebar-toggle {
+  color: #fff;
+  background-color: #555;
+}
+.sidebar-toggle:active::before,
+#sidebar-checkbox:focus ~ .sidebar-toggle::before,
+#sidebar-checkbox:checked ~ .sidebar-toggle::before {
+  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 16 16' fill='%23fff' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' d='M2.5 11.5A.5.5 0 013 11h10a.5.5 0 010 1H3a.5.5 0 01-.5-.5zm0-4A.5.5 0 013 7h10a.5.5 0 010 1H3a.5.5 0 01-.5-.5zm0-4A.5.5 0 013 3h10a.5.5 0 010 1H3a.5.5 0 01-.5-.5z' clip-rule='evenodd'/%3E%3C/svg%3E") no-repeat;
+}
+@media (min-width: 30.1em) { .sidebar-toggle { position: fixed; } }
+@media print { .sidebar-toggle { display: none; } }
+
+/* The slide. No translate3d: mixed with position:fixed on the toggle it
+   creates a containing block and the fixed toggle starts behaving as if it
+   were absolutely positioned. */
+.wrap, .sidebar, .sidebar-toggle { backface-visibility: hidden; }
+.wrap, .sidebar-toggle { transition: transform .3s ease-in-out; }
+
+#sidebar-checkbox:checked + .sidebar { z-index: 10; visibility: visible; }
+#sidebar-checkbox:checked ~ .sidebar,
+#sidebar-checkbox:checked ~ .wrap,
+#sidebar-checkbox:checked ~ .sidebar-toggle { transform: translateX(14rem); }
+
+/* The masthead sits under the fixed toggle, so keep the title clear of it. */
+@media (min-width: 30.1em) { .masthead-inner { padding-left: 4.5rem; } }
 
 /* ---------- page shell ------------------------------------------------ */
 
@@ -413,8 +489,9 @@ kbd {
   .card { padding: 1.15rem; border-radius: 8px; }
   h1 { font-size: 1.6rem; }
   h2 { font-size: 1.25rem; }
-  .site-inner { padding: .55rem 1rem; gap: .5rem; }
-  header.site nav { margin-left: 0; width: 100%; }
+  /* Below 30.1em the toggle is absolute rather than fixed, so it scrolls
+     away with the page and the title needs no room reserved for it. */
+  .masthead-inner { padding: 0 1rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {

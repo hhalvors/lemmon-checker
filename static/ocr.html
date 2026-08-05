@@ -11,19 +11,39 @@
   </style>
 </head>
 <body>
-  <header class="site">
-  <div class="site-inner">
-    <a class="brand" href="/">Symbolic Logic Tools</a>
-    <nav>
-      <a href="/proof">Proof Checker</a>
-      <a href="/photo" aria-current="page">Photo</a>
-      <a href="/prop">Truth Tables</a>
-      <a href="/model">Model Checker</a>
-      <a href="/template">Template</a>
-      <a href="/instructions">Instructions</a>
+  <input type="checkbox" class="sidebar-checkbox" id="sidebar-checkbox">
+
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-item">
+      <p>Companion tools for <em>How Logic Works</em>.</p>
+    </div>
+    <nav class="sidebar-nav">
+      <a class="sidebar-nav-item" href="/">Home</a>
+      <a class="sidebar-nav-item" href="/proof">Proof checker</a>
+      <a class="sidebar-nav-item" href="/photo">Check a photo</a>
+      <a class="sidebar-nav-item" href="/template">Blank template</a>
+      <a class="sidebar-nav-item" href="/prop">Truth tables</a>
+      <a class="sidebar-nav-item" href="/prop/dnf">DNF converter</a>
+      <a class="sidebar-nav-item" href="/model">Model checker</a>
+      <a class="sidebar-nav-item" href="/graph">Model builder</a>
+      <a class="sidebar-nav-item" href="/instructions">Instructions</a>
+      <a class="sidebar-nav-item offsite" href="https://hanshalvorson.com/logic-tools.html">About these tools</a>
+      <a class="sidebar-nav-item" href="https://hanshalvorson.com/">Hans Halvorson</a>
     </nav>
+    <div class="sidebar-item">
+      <p>&copy; 2025 Hans Halvorson</p>
+    </div>
   </div>
-</header>
+
+  <div class="wrap">
+    <div class="masthead">
+      <div class="masthead-inner">
+        <h3 class="masthead-title">
+          <a href="/" title="Home">Symbolic Logic Tools</a>
+          <small>How Logic Works</small>
+        </h3>
+      </div>
+    </div>
 <main>
     <h1 class="page-title">OCR → Pipe Proof</h1>
     <section class="card">
@@ -42,8 +62,11 @@
   </main>
 
   <footer>&copy; 2025 Symbolic Logic Tools</footer>
+  </div>
 
-  <script>
+  <label for="sidebar-checkbox" class="sidebar-toggle"></label>
+
+<script>
     const $ = id => document.getElementById(id);
     const file = $('file'), go = $('go'), spin = $('spin'), status = $('status'), preview = $('preview');
 
