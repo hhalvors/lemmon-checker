@@ -47,7 +47,13 @@
   --mono: Menlo, Monaco, "Courier New", ui-monospace, SFMono-Regular, monospace;
 
   --measure: 68ch;     /* comfortable reading width for prose */
-  --page:    1080px;   /* outer width for tool pages */
+
+  /* Geometry copied from hanshalvorson.com. --masthead-pad is shared by the
+     masthead and the content below it, which is what makes the page title
+     line up under the "S" of the site name rather than sitting to its left. */
+  --page:         1400px;
+  --content-pad:  1.25rem;
+  --masthead-pad: 4rem;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -81,13 +87,12 @@
 
 html { -webkit-text-size-adjust: 100%; }
 
-/* 18px rather than the personal site's 20px. The prose there is a column of
-   text; these pages carry proof tables and formula input, where 20px starts
-   to wrap awkwardly. Close enough that the two do not feel unrelated. */
+/* 20px, matching hanshalvorson.com exactly. Tables, inputs and code are
+   scaled down against it further below so that proof tables still fit. */
 body {
   margin: 0;
   font-family: var(--font);
-  font-size: 18px;
+  font-size: 20px;
   line-height: 1.55;
   color: var(--text);
   background: var(--bg);
@@ -97,13 +102,13 @@ body {
 
 /* Weights and tracking from the personal site: heavier and tighter than the
    defaults here were, which is most of what made the two look unrelated. */
-h1, h2, h3, h4 { line-height: 1.2; letter-spacing: -.01em; margin: 0 0 .6em; }
-h1 { font-size: 2rem;    font-weight: 750; }
-h2 { font-size: 1.45rem; font-weight: 720; margin-top: 2.2rem; }
-h3 { font-size: 1.15rem; font-weight: 650; margin-top: 1.6rem; }
-h4 { font-size: 1rem;    font-weight: 650; }
+h1, h2, h3, h4 { line-height: 1.2; letter-spacing: -.01em; }
+h1 { font-size: 2.4rem; font-weight: 750; margin: 0 0 1.2rem; }
+h2 { font-size: 1.9rem; font-weight: 720; margin: 3rem 0 1.2rem; }
+h3 { font-size: 1.4rem; font-weight: 650; margin: 2rem 0 1rem; }
+h4 { font-size: 1.1rem; font-weight: 650; margin: 1.5rem 0 .8rem; }
 
-p  { margin: 0 0 1.1rem; max-width: var(--measure); }
+p  { margin: .9rem 0 1.2rem; max-width: var(--measure); }
 ul, ol { max-width: var(--measure); }
 
 /* Underline on hover only, as on the personal site. */
@@ -135,11 +140,12 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 .masthead-inner {
   max-width: var(--page);
   margin: 0 auto;
-  padding: 0 1.25rem;
+  /* Same left padding as the content below, so the two line up. */
+  padding: 0 var(--content-pad) 0 var(--masthead-pad);
 }
 .masthead-title {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: 1.25rem;
   font-weight: 750;
   letter-spacing: -.01em;
   color: var(--text);
@@ -246,14 +252,16 @@ a.sidebar-nav-item:focus {
 #sidebar-checkbox:checked ~ .sidebar-toggle { transform: translateX(14rem); }
 
 /* The masthead sits under the fixed toggle, so keep the title clear of it. */
-@media (min-width: 30.1em) { .masthead-inner { padding-left: 4.5rem; } }
+/* --masthead-pad already clears the fixed toggle; no extra rule needed. */
 
 /* ---------- page shell ------------------------------------------------ */
 
 main {
   max-width: var(--page);
   margin: 0 auto;
-  padding: 2rem 1.25rem 4rem;
+  /* Left padding matches the masthead so the page title sits under the "S"
+     of the site name, as body text does on hanshalvorson.com. */
+  padding: 2rem var(--content-pad) 4rem var(--masthead-pad);
 }
 
 main.prose { max-width: 780px; }   /* instructions read better narrower */
@@ -277,7 +285,7 @@ main.prose { max-width: 780px; }   /* instructions read better narrower */
 footer {
   max-width: var(--page);
   margin: 0 auto;
-  padding: 2rem 1.25rem 3rem;
+  padding: 2rem var(--content-pad) 3rem var(--masthead-pad);
   color: var(--text-faint);
   font-size: .875rem;
   border-top: 1px solid var(--border);
@@ -291,7 +299,7 @@ button, .btn, a.button {
   justify-content: center;
   gap: .4rem;
   font: inherit;
-  font-size: .95rem;
+  font-size: .9rem;
   font-weight: 550;
   padding: .5rem 1rem;
   border-radius: var(--radius-sm);
@@ -347,7 +355,7 @@ button:disabled, .btn:disabled { opacity: .5; cursor: not-allowed; background: v
               transform: translateY(-1px); text-decoration: none; }
 .tile-name { display: block; font-weight: 650; letter-spacing: -.01em;
              margin-bottom: .15rem; }
-.tile-desc { display: block; color: var(--text-muted); font-size: .9rem; line-height: 1.45; }
+.tile-desc { display: block; color: var(--text-muted); font-size: .85rem; line-height: 1.45; }
 
 /* ---------- forms ------------------------------------------------------ */
 
@@ -367,7 +375,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 
 textarea {
   font-family: var(--mono);
-  font-size: .95rem;
+  font-size: .85rem;
   line-height: 1.55;
   min-height: 12rem;
   resize: vertical;
@@ -381,7 +389,7 @@ textarea {
 
 .table-wrap { overflow-x: auto; margin: 1rem 0; }
 
-table { width: 100%; border-collapse: collapse; font-size: .93rem; }
+table { width: 100%; border-collapse: collapse; font-size: .8rem; }
 th, td {
   text-align: left;
   padding: .55rem .7rem;
@@ -390,7 +398,7 @@ th, td {
 }
 thead th {
   font-weight: 620;
-  font-size: .8rem;
+  font-size: .72rem;
   text-transform: uppercase;
   letter-spacing: .04em;
   color: var(--text-muted);
@@ -417,7 +425,7 @@ pre {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: .875rem 1rem;
-  font-size: .9rem;
+  font-size: .8rem;
 }
 pre code { background: none; border: 0; padding: 0; }
 kbd {
@@ -429,7 +437,7 @@ kbd {
   padding: .1rem .35rem;
 }
 
-.hint, .muted { color: var(--text-muted); font-size: .925rem; }
+.hint, .muted { color: var(--text-muted); font-size: .85rem; }
 .faint { color: var(--text-faint); }
 .ok   { color: var(--ok);   font-weight: 600; }
 .bad  { color: var(--bad);  font-weight: 600; }
@@ -471,27 +479,31 @@ kbd {
 
 /* Status line used by the tool pages: neutral by default, coloured when the
    page adds .ok / .bad alongside it. */
-.status { font-size: .925rem; color: var(--text-muted); min-height: 1.4em; }
+.status { font-size: .85rem; color: var(--text-muted); min-height: 1.4em; }
 .status.ok  { color: var(--ok); }
 .status.bad { color: var(--bad); }
 
 .controls { display: flex; gap: .625rem; align-items: center; flex-wrap: wrap; }
 
-.small { font-size: .9rem; }
+.small { font-size: .85rem; }
 
 .hidden { display: none; }
 
 /* ---------- small screens ---------------------------------------------- */
 
-@media (max-width: 600px) {
+/* The personal site drops to 16px below 38em and gives up masthead alignment
+   below 700px in favour of usable line length. Same two decisions here. */
+@media (max-width: 700px) {
+  :root { --content-pad: 1rem; --masthead-pad: 1rem; }
+}
+
+@media (max-width: 38em) {
   body { font-size: 16px; }
   main { padding: 1.5rem 1rem 3rem; }
   .card { padding: 1.15rem; border-radius: 8px; }
-  h1 { font-size: 1.6rem; }
-  h2 { font-size: 1.25rem; }
-  /* Below 30.1em the toggle is absolute rather than fixed, so it scrolls
-     away with the page and the title needs no room reserved for it. */
-  .masthead-inner { padding: 0 1rem; }
+  h1 { font-size: 1.9rem; }
+  h2 { font-size: 1.5rem; }
+  h3 { font-size: 1.2rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
