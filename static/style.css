@@ -377,6 +377,78 @@ button:disabled, .btn:disabled { opacity: .5; cursor: not-allowed; background: v
 }
 .icon-links .desc { color: var(--text-muted); }
 
+/* ---------- form sections --------------------------------------------- */
+/* A page like the model checker is a form, not an article. Its section
+   headings label a group of fields, so the 1.9rem h2 of the prose scale
+   dwarfs what it introduces. These give tool pages a heading and a column
+   width of their own rather than each inventing its own in a <style> block. */
+
+.form-column { max-width: 46rem; }
+
+.field-set { margin: 0 0 2.25rem; }
+.field-set > h2 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  margin: 0 0 .1rem;
+}
+/* One line under the heading saying what the group is for. */
+.field-set > .field-help {
+  color: var(--text-muted);
+  font-size: .85rem;
+  margin: 0 0 .75rem;
+  max-width: var(--measure);
+}
+/* Notes that belong after the fields rather than before them. */
+.field-set > .field-note {
+  color: var(--text-muted);
+  font-size: .85rem;
+  margin: .6rem 0 0;
+  max-width: var(--measure);
+}
+
+/* Repeating rows of inputs, as used for constants and symbols. */
+.row-stack { display: grid; gap: .4rem; }
+.grid-row  { display: grid; gap: .4rem; align-items: center; }
+
+.col-head {
+  display: grid;
+  gap: .4rem;
+  font-size: .78rem;
+  font-weight: 620;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-muted);
+  margin-bottom: .3rem;
+}
+
+/* Row controls are punctuation, not actions: quiet until you reach for them.
+   The old page filled them indigo and pale blue, which made two 40px blocks
+   of colour compete with the Check button for attention. */
+.btn-row {
+  width: 2rem; height: 2rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: 1.1rem;
+  line-height: 1;
+  background: none;
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.btn-row:hover { background: var(--surface-2); color: var(--bad); border-color: var(--border-firm); }
+
+.btn.btn-add {
+  margin-top: .5rem;
+  font-size: .85rem;
+  padding: .35rem .7rem;
+  background: none;
+  color: var(--accent);
+  border: 1px solid var(--border-firm);
+}
+.btn.btn-add:hover { background: var(--surface-2); color: var(--accent-dark); }
+
 /* ---------- forms ------------------------------------------------------ */
 
 label { font-weight: 550; display: inline-block; margin-bottom: .35rem; }

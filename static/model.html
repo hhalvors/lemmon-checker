@@ -6,37 +6,21 @@
   <title>Model Checker</title>
   <link rel="stylesheet" href="style.css" />
   <style>
-    /* --- minimal page-local styles --- */
-.two { display:grid; gap:1rem; }
-    @media (min-width: 960px) { .two { grid-template-columns: 1fr 1fr; } }
+    /* Only the column geometry this page needs. Everything else — buttons,
+       inputs, .ok/.bad, headings — comes from style.css. This block used to
+       re-declare .btn as #3949ab and .btn-ghost as pale blue, which is why
+       the controls here were a different colour from the rest of the site. */
 
-    h2 { margin:0 0 .5rem; }
-textarea#sentence { min-height:8rem; font-family:ui-monospace, Menlo, Consolas, monospace; }
+    /* [constant] [denotes] [remove] */
+    .col-const, .const-row { grid-template-columns: 1fr 1fr 2rem; }
+    /* [symbol] [arity] [extension] [remove] */
+    .col-sym,   .sym-row   { grid-template-columns: 1fr 5rem 1.6fr 2rem; }
+    .sym-row input:nth-child(2) { text-align: center; }
 
-    .grid-row { display:grid; gap:.5rem; align-items:center; }
-    /* constants: [const] [denotes] [−] */
-    .const-row { grid-template-columns: 1fr 1fr 44px; }
-    /* symbols: [name] [arity] [extension/value] [−] */
-    .sym-row   { grid-template-columns: 1fr 90px 1fr 44px; }
-    .sym-row input:nth-child(2){ text-align:center; }
+    .input-narrow { max-width: 20rem; }
+    textarea#sentence { min-height: 6rem; }
 
-    .label-row { display:grid; gap:.5rem; font-weight:600; margin:.25rem 0; }
-    .label-const { grid-template-columns: 1fr 1fr 44px; }
-    .label-sym   { grid-template-columns: 1fr 90px 1fr 44px; }
-
-    .row-stack { display:grid; gap:.6rem; }  /* stacks rows vertically */
-
-    .btn { border:none; background:#3949ab; color:#fff; padding:.55rem .9rem;
-           border-radius:.6rem; cursor:pointer; }
-    .btn:disabled { opacity:.6; cursor:not-allowed; }
-    .btn-round { width:40px; height:40px; border-radius:10px; display:grid; place-items:center; font-weight:700; }
-
-    .btn-ghost { background:#eef2ff; color:#1f2a60; }
-
-    .add-wrap { display:flex; justify-content:flex-end; margin-top:.35rem; }
-
-    #out { margin-top:.75rem; font-size:1.05rem; }
-    .ok { color:#167d36; font-weight:600; } .bad{ color:#b00020; font-weight:600; }
+    #out { margin-top: .75rem; font-size: 1.05rem; }
   </style>
 </head>
 <body>
@@ -75,49 +59,61 @@ textarea#sentence { min-height:8rem; font-family:ui-monospace, Menlo, Consolas, 
     </div>
 <main>
     <h1 class="page-title">Model Checker</h1>
-    <div class="two">
-      <!-- Left: domain + constants -->
-      <section class="card">
+    <p class="page-intro">
+      Describe a finite structure, then ask whether a closed sentence is true
+      in it.
+    </p>
+
+    <!-- One column, in the order the structure is actually built up: the
+         domain first, then what the names pick out, then what the predicates
+         are true of, and only then the sentence to evaluate. The two-column
+         layout put Symbols beside Constants, so the eye had to cross the page
+         and come back before reaching the Sentence box. -->
+    <div class="form-column">
+
+      <div class="field-set">
         <h2>Domain</h2>
-        <label class="muted">Elements (comma-separated):</label>
-        <input id="domain" placeholder="a, b, c" value="a,b" />
-        <div class="muted" style="margin-top:.25rem">Example: a , b , c</div>
+        <p class="field-help">The elements the structure is built from, separated by commas.</p>
+        <input id="domain" class="input-narrow" placeholder="a, b, c" value="a,b" />
+      </div>
 
-        <h2 style="margin-top:1rem">Constants</h2>
-        <div class="label-row label-const"><div>Constant</div><div>Denotes (domain element)</div><div></div></div>
+      <div class="field-set">
+        <h2>Constants</h2>
+        <p class="field-help">Which element each name picks out. Leave empty if the language has no constants.</p>
+        <div class="col-head col-const"><div>Constant</div><div>Denotes</div><div></div></div>
         <div id="constRows" class="row-stack"></div>
-        <div class="add-wrap"><button id="addConst" class="btn btn-round">+</button></div>
-        <div class="muted" style="margin-top:.5rem">Format: <code>c</code> denotes element <code>a</code>. Leave empty if none.</div>
-      </section>
+        <button id="addConst" type="button" class="btn btn-add">Add a constant</button>
+      </div>
 
-      <!-- Right: symbols -->
-      <section class="card">
+      <div class="field-set">
         <h2>Symbols</h2>
-        <div class="label-row label-sym"><div>Symbol</div><div>Arity</div><div>Extension / Value</div><div></div></div>
+        <p class="field-help">Each predicate, its arity, and what it is true of.</p>
+        <div class="col-head col-sym"><div>Symbol</div><div>Arity</div><div>Extension / value</div><div></div></div>
         <div id="symRows" class="row-stack"></div>
-        <div class="add-wrap"><button id="addSym" class="btn btn-round">+</button></div>
-
-        <p class="muted" style="margin-top:.5rem">
-          Arity 0: enter <b>T</b> or <b>F</b> (propositional constant).<br/>
-          Arity 1: elements, e.g. <code>a,b</code> (unary predicate).<br/>
-          Arity 2–3: tuples, e.g. <code>&lt;a,b&gt;</code>, <code>&lt;b,a&gt;</code> or <code>&lt;a,b,c&gt;</code>, <code>&lt;b,c,a&gt;</code>.
+        <button id="addSym" type="button" class="btn btn-add">Add a symbol</button>
+        <p class="field-note">
+          Arity 0 takes <code>T</code> or <code>F</code>.
+          Arity 1 takes elements, e.g. <code>a,b</code>.
+          Arity 2–3 take tuples, e.g. <code>&lt;a,b&gt;, &lt;b,a&gt;</code>.
         </p>
-      </section>
-    </div>
+      </div>
 
-    <!-- Sentence -->
-    <section class="card">
-      <h2>Sentence</h2>
-      <textarea id="sentence" placeholder="∀x (F x → ∃y R x y)"></textarea>
-      <div style="display:flex; gap:.75rem; align-items:center; margin-top:.75rem">
-        <button id="run" class="btn">Check</button>
-        <span id="spinner" class="muted" style="display:none">Checking…</span>
+      <div class="field-set">
+        <h2>Sentence</h2>
+        <p class="field-help">A closed sentence to evaluate in the structure above.</p>
+        <textarea id="sentence" placeholder="∀x (F x → ∃y R x y)"></textarea>
+        <p class="field-note">
+          ASCII shorthands work: <code>-&gt;</code> for →, <code>~</code> for ¬,
+          <code>/\</code> for ∧, <code>\/</code> for ∨.
+        </p>
+        <div class="actions">
+          <button id="run" class="btn">Check</button>
+          <span id="spinner" class="hint" style="display:none">Checking…</span>
+        </div>
+        <div id="out"></div>
       </div>
-      <div id="out"></div>
-      <div class="muted" style="margin-top:.5rem">
-        ASCII shorthands OK: <code>-></code> (→), <code>~</code> (¬), <code>/\</code> (∧), <code>\/</code> (∨), or “and/or/not”.
-      </div>
-    </section>
+
+    </div>
   </main>
 
 <footer>
@@ -208,7 +204,8 @@ textarea#sentence { min-height:8rem; font-family:ui-monospace, Menlo, Consolas, 
       const row = mk('div', 'grid-row const-row');
       const ci = mk('input'); ci.type = 'text'; ci.placeholder = 'c'; ci.value = c;
       const vi = mk('input'); vi.type = 'text'; vi.placeholder = 'a'; vi.value = v;
-      const rm = mk('button', 'btn btn-ghost btn-round'); rm.type = 'button'; rm.textContent = '−';
+      const rm = mk('button', 'btn btn-row'); rm.type = 'button'; rm.textContent = '−';
+      rm.title = 'Remove this row'; rm.setAttribute('aria-label', 'Remove this row');
       rm.onclick = () => row.remove();
       row.append(ci, vi, rm);
       $('constRows').append(row);
@@ -219,7 +216,8 @@ textarea#sentence { min-height:8rem; font-family:ui-monospace, Menlo, Consolas, 
       const s  = mk('input'); s.type = 'text'; s.placeholder = 'P / F / R'; s.value = name;
       const a  = mk('input'); a.type = 'text'; a.placeholder = '0..3'; a.value = String(ar);
       const e  = mk('input'); e.type = 'text'; e.placeholder = 'T  |  a,b  |  <a,b>, <b,a>'; e.value = ext;
-      const rm = mk('button', 'btn btn-ghost btn-round'); rm.type = 'button'; rm.textContent = '−';
+      const rm = mk('button', 'btn btn-row'); rm.type = 'button'; rm.textContent = '−';
+      rm.title = 'Remove this row'; rm.setAttribute('aria-label', 'Remove this row');
       rm.onclick = () => row.remove();
       row.append(s, a, e, rm);
       $('symRows').append(row);
