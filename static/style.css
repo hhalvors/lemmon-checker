@@ -453,7 +453,13 @@ button:disabled, .btn:disabled { opacity: .5; cursor: not-allowed; background: v
 
 label { font-weight: 550; display: inline-block; margin-bottom: .35rem; }
 
-input[type=text], input[type=number], input[type=file], select, textarea {
+/* Selected by exclusion rather than by listing the text-like types. An
+   attribute selector needs the attribute to be present, so `input[type=text]`
+   misses <input> with no type= at all — which is a valid text input, and left
+   one field on the model checker rendering in the browser's default 13px
+   font while every field beside it inherited 20px Inter. */
+input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=submit]):not([type=button]),
+select, textarea {
   font: inherit;
   color: var(--text);
   background: var(--surface);
