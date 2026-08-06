@@ -53,7 +53,9 @@
      line up under the "S" of the site name rather than sitting to its left. */
   --page:         1400px;
   --content-pad:  1.25rem;
-  --masthead-pad: 4rem;
+  /* 4.5rem = 90px, comfortably past the 78px hamburger. Your site's 4rem
+     works because its toggle sits in a narrower masthead. */
+  --masthead-pad: 4.5rem;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -85,7 +87,12 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
-html { -webkit-text-size-adjust: 100%; }
+/* On html, not only on body. rem resolves against the root element, so
+   setting the size on body alone leaves every rem in this file computing
+   against the browser default of 16px -- which silently shrank the whole
+   scale and made --masthead-pad narrower than the hamburger it exists to
+   clear. hanshalvorson.com sets `html, body` together for this reason. */
+html { font-size: 20px; -webkit-text-size-adjust: 100%; }
 
 /* 20px, matching hanshalvorson.com exactly. Tables, inputs and code are
    scaled down against it further below so that proof tables still fit. */
@@ -267,7 +274,16 @@ main {
 main.prose { max-width: 780px; }   /* instructions read better narrower */
 
 .page-title { margin-bottom: .25rem; }
-.page-intro { color: var(--text-muted); margin-bottom: 2rem; max-width: var(--measure); }
+.page-intro {
+  color: var(--text-muted);
+  font-size: 1.15rem;
+  line-height: 1.5;
+  margin: 0 0 2.5rem;
+  max-width: var(--measure);
+}
+/* A section heading that opens the page rather than separating two blocks,
+   so it does not need the 3rem of air above that h2 normally carries. */
+h2.tight { margin-top: 1rem; }
 
 /* One card layer only. A card inside a card gives the doubled
    border-and-shadow that made the old pages look unfinished. */
@@ -331,11 +347,16 @@ button:disabled, .btn:disabled { opacity: .5; cursor: not-allowed; background: v
 
 /* ---------- tool tiles (home page) ------------------------------------ */
 
+/* auto-fit with 1fr stretches every tile to fill the row, so three tiles on a
+   1400px page became three 450px slabs of mostly empty space. Capping the
+   track and packing to the start keeps them a readable, consistent size
+   however many there are. */
 .tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 320px));
+  justify-content: start;
   gap: .875rem;
-  margin: 0 0 2rem;
+  margin: 0 0 2.5rem;
   padding: 0;
   list-style: none;
 }
@@ -489,6 +510,17 @@ kbd {
 
 .hidden { display: none; }
 
+/* Present to a screen reader, absent on screen. */
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ---------- small screens ---------------------------------------------- */
 
 /* The personal site drops to 16px below 38em and gives up masthead alignment
@@ -498,7 +530,7 @@ kbd {
 }
 
 @media (max-width: 38em) {
-  body { font-size: 16px; }
+  html, body { font-size: 16px; }
   main { padding: 1.5rem 1rem 3rem; }
   .card { padding: 1.15rem; border-radius: 8px; }
   h1 { font-size: 1.9rem; }

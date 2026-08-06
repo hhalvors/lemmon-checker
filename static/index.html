@@ -41,7 +41,11 @@
       </div>
     </div>
 <main>
-    <h1 class="page-title">Symbolic Logic Tools</h1>
+    <!-- The masthead already says "Symbolic Logic Tools" directly above this,
+         so a visible h1 repeating it is redundant. hanshalvorson.com solves
+         the same problem on its own front page with hide_title: true. The
+         heading stays in the document for screen readers and search. -->
+    <h1 class="visually-hidden">Symbolic Logic Tools</h1>
     <p class="page-intro">
       Companion tools for <a
       href="https://press.princeton.edu/books/paperback/9780691211954/how-logic-works"><em>How
@@ -49,7 +53,7 @@
       sentence in a finite structure, or build a truth table.
     </p>
 
-    <h2 style="margin-top:0">Proofs</h2>
+    <h2 class="tight">Proofs</h2>
     <div class="tiles">
       <a class="tile" href="/proof">
         <span class="tile-name">Proof checker</span>
