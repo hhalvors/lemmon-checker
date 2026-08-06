@@ -345,38 +345,32 @@ button:disabled, .btn:disabled { opacity: .5; cursor: not-allowed; background: v
   .btn.quiet, button.quiet, .button.secondary { color: var(--text); }
 }
 
-/* ---------- tool tiles (home page) ------------------------------------ */
+/* ---------- icon lists (home page) ------------------------------------ */
 
-/* auto-fit with 1fr stretches every tile to fill the row, so three tiles on a
-   1400px page became three 450px slabs of mostly empty space. Capping the
-   track and packing to the start keeps them a readable, consistent size
-   however many there are. */
-.tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 320px));
-  justify-content: start;
-  gap: .875rem;
-  margin: 0 0 2.5rem;
-  padding: 0;
-  list-style: none;
-}
+/* Icon list, as on hanshalvorson.com: a small muted icon, the link, then a
+   plain description. This replaced a grid of bordered tiles, which put a box
+   around every item and stretched them across the full page width.
 
-.tile {
-  display: block;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1.1rem 1.2rem;
-  text-decoration: none;
-  color: var(--text);
-  box-shadow: var(--shadow);
-  transition: border-color .12s ease, transform .12s ease;
+   Capped at the reading measure rather than the page width, so a list of
+   four does not run to 1400px. */
+.icon-links {
+  margin: 1em 0 2em;
+  max-width: var(--measure);
 }
-.tile:hover { border-color: var(--accent); color: var(--text);
-              transform: translateY(-1px); text-decoration: none; }
-.tile-name { display: block; font-weight: 650; letter-spacing: -.01em;
-             margin-bottom: .15rem; }
-.tile-desc { display: block; color: var(--text-muted); font-size: .85rem; line-height: 1.45; }
+.icon-links > div {
+  display: flex;
+  align-items: baseline;
+  gap: .55em;
+  margin-bottom: .4em;
+  line-height: 1.5;
+}
+.icon-links .icon {
+  width: 1.4em;
+  flex: none;
+  text-align: center;
+  color: var(--text-faint);
+}
+.icon-links .desc { color: var(--text-muted); }
 
 /* ---------- forms ------------------------------------------------------ */
 
@@ -540,5 +534,4 @@ kbd {
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
-  .tile:hover { transform: none; }
 }
