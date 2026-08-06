@@ -287,14 +287,19 @@ h2.tight { margin-top: 1rem; }
 
 /* One card layer only. A card inside a card gives the doubled
    border-and-shadow that made the old pages look unfinished. */
+/* A grouping element, not a box. It used to draw a border, a radius and a
+   shadow, which on the proof checker meant a bordered card wrapped around a
+   bordered textarea -- a box inside a box, framing a single control. The
+   personal site puts content straight onto the page, so this now only
+   provides vertical separation between groups. */
 .card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 1.5rem;
+  padding: 0;
 }
-.card + .card { margin-top: 1.25rem; }
+.card + .card {
+  margin-top: 2.5rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--border);
+}
 .card > :first-child { margin-top: 0; }
 .card > :last-child  { margin-bottom: 0; }
 
@@ -460,18 +465,21 @@ kbd {
 
 /* A left rule rather than a filled box: legible in both colour schemes,
    and it does not shout. */
+/* A rule in the margin, not a filled panel — the shape of a blockquote on
+   hanshalvorson.com. The colour still says which kind of remark it is; it
+   just no longer paints a slab across the page to do it. */
 .callout {
-  border-left: 3px solid var(--border-firm);
-  background: var(--surface-2);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  padding: .8rem 1rem;
-  margin: 1rem 0;
+  border-left: 4px solid var(--border-firm);
+  padding: .1rem 0 .1rem 1rem;
+  margin: 1.5rem 0;
+  max-width: var(--measure);
+  color: var(--text-muted);
 }
 .callout > :last-child { margin-bottom: 0; }
-.callout.tip     { border-left-color: var(--accent); background: var(--accent-soft); }
-.callout.caution { border-left-color: var(--warn);   background: var(--warn-soft); }
-.callout.good    { border-left-color: var(--ok);     background: var(--ok-soft); }
-.callout.problem { border-left-color: var(--bad);    background: var(--bad-soft); }
+.callout.tip     { border-left-color: var(--accent); }
+.callout.caution { border-left-color: var(--warn); }
+.callout.good    { border-left-color: var(--ok); }
+.callout.problem { border-left-color: var(--bad); }
 
 .banner {
   margin-top: 1.25rem;
@@ -526,7 +534,7 @@ kbd {
 @media (max-width: 38em) {
   html, body { font-size: 16px; }
   main { padding: 1.5rem 1rem 3rem; }
-  .card { padding: 1.15rem; border-radius: 8px; }
+  .card + .card { margin-top: 2rem; padding-top: 1.5rem; }
   h1 { font-size: 1.9rem; }
   h2 { font-size: 1.5rem; }
   h3 { font-size: 1.2rem; }
