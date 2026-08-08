@@ -18,11 +18,13 @@
 
 module Main where
 
-import ProofTypes     (Proof)
+import ProofTypes     (Proof, ProofLine(..))
 import PipeParse      (parsePipeProof)
 import LemmonChecker  (checkProof, proofValid, LineReport(..))
+import FitchConvert   (lemmonToFitch, fitchToLemmon, renderTranslationError)
 import Control.Monad  (forM_)
-import Data.List      (intercalate)
+import Data.List      (intercalate, isInfixOf)
+import qualified Data.Set as S
 import System.Exit    (exitFailure, exitSuccess)
 
 --------------------------------------------------------------------------------
@@ -305,6 +307,47 @@ suite =
       , Case "rule given the wrong number of line references"
           (pf [ "1|1|P→Q|A", "2|2|P|A", "1,2|3|Q|1 MP" ]) ParseFails
       ] )
+
+    -- Two perfectly good Lemmon proofs that Fitch cannot express directly.
+    -- They are here because without them the whole obstruction-detection
+    -- machinery in FitchConvert is dead code: every other proof in this
+    -- corpus discharges innermost-first and uses no line after its box has
+    -- closed, so neither failure can arise.
+  , ( "Fitch obstructions"
+    , [ -- Discharge out of order. Assumption 1 is made first and discharged
+        -- first, so in Fitch its box would be the outer one and would have to
+        -- close while the inner box for 2 is still open.
+        Case "discharges the outer assumption first"
+          (pf [ "1|1|P|A"
+              , "2|2|Q|A"
+              , "1,2|3|P∧Q|1,2 ∧I"
+              , "2|4|P→(P∧Q)|1,3 CP"
+              , "|5|Q→(P→(P∧Q))|2,4 CP" ]) Valid
+
+        -- A line written inside a box that does not depend on that box's
+        -- assumption, and is then used after the box closes. Line 3 depends
+        -- only on 1, so in Lemmon it survives the discharge of 2 untouched;
+        -- in Fitch it is inside 2's box and dies with it.
+      , Case "uses a line that outlived its box"
+          (pf [ "1|1|P|A"
+              , "2|2|Q|A"
+              , "1|3|P∨R|1 ∨I"
+              , "2|4|Q∧Q|2,2 ∧I"
+              , "|5|Q→(Q∧Q)|2,4 CP"
+              , "1|6|(P∨R)∧(Q→(Q∧Q))|3,5 ∧I" ]) Valid
+      ] )
+  ]
+
+-- | Cases the Fitch translation is expected to refuse, and the word that
+-- should appear in its explanation.
+--
+-- Keeping this list separate from the corpus means a refusal is only
+-- acceptable where it was predicted. A proof that starts refusing without
+-- being named here is a regression, not a discovery.
+expectedRefusals :: [(String, String)]
+expectedRefusals =
+  [ ("discharges the outer assumption first", "reordered")
+  , ("uses a line that outlived its box",     "second time")
   ]
 
 --------------------------------------------------------------------------------
@@ -319,12 +362,129 @@ main = do
   putStrLn ""
   putStrLn (replicate 64 '-')
   if failed == 0
-    then do
-      putStrLn ("All " ++ show total ++ " cases behaved as expected.")
-      exitSuccess
-    else do
-      putStrLn (show failed ++ " of " ++ show total ++ " cases misbehaved.")
-      exitFailure
+    then putStrLn ("All " ++ show total ++ " cases behaved as expected.")
+    else putStrLn (show failed ++ " of " ++ show total ++ " cases misbehaved.")
+
+  fitchBroken <- fitchPass
+
+  putStrLn ""
+  if failed == 0 && fitchBroken == 0
+    then exitSuccess
+    else exitFailure
+
+--------------------------------------------------------------------------------
+-- Fitch translation over the same corpus
+--------------------------------------------------------------------------------
+--
+-- Every valid proof is translated to Fitch and back. Three outcomes, and only
+-- one of them is a fault:
+--
+--   exact    the proof came back line for line, dependency sets included
+--   looser   it came back with smaller dependency sets on some lines, which
+--            means the original cited more than it used. Information, not error
+--   refused  the proof has no direct Fitch image. Also not an error: it is the
+--            translation reporting an obstruction it does not yet handle, and
+--            the count of these is the number worth watching
+--
+-- A round trip that changes a formula, a justification, a line number, or that
+-- makes a dependency set *larger* is a bug, and fails the suite.
+
+data RT
+  = Exact
+  | Looser [Int]
+  | Refused String
+  | Broken String
+
+fitchPass :: IO Int
+fitchPass = do
+  putStrLn ""
+  putStrLn (replicate 64 '-')
+  putStrLn "Fitch translation (valid cases only):"
+  putStrLn ""
+  let valids = [ c | (_, cs) <- suite, c <- cs, wanted (caseExpect c) ]
+      rs     = [ (caseName c, roundTrip (caseText c)) | c <- valids ]
+  forM_ rs $ \(nm, r) -> putStrLn ("  " ++ tag nm r ++ "  " ++ nm ++ note r)
+  let n k    = length [ () | (_, r) <- rs, k r ]
+      wrong  = [ nm | (nm, r) <- rs, not (asExpected nm r) ]
+  putStrLn ""
+  putStrLn $ "  " ++ show (n isExact) ++ " exact, "
+             ++ show (n isLooser)  ++ " looser, "
+             ++ show (n isRefused) ++ " refused, "
+             ++ show (n isBroken) ++ " broken, out of "
+             ++ show (length rs) ++ " valid proofs."
+  forM_ wrong $ \nm -> putStrLn ("  FAIL  unexpected outcome: " ++ nm)
+  pure (length wrong)
+  where
+    wanted Valid = True
+    wanted _     = False
+
+    -- A refusal counts as correct behaviour only where it was predicted, and
+    -- only when the explanation names the obstruction that was expected.
+    asExpected nm r =
+      case (lookup nm expectedRefusals, r) of
+        (Just w,  Refused m) -> w `isInfixOf` m
+        (Just _,  _)         -> False
+        (Nothing, Refused _) -> False
+        (Nothing, Broken _)  -> False
+        (Nothing, _)         -> True
+
+    tag nm r
+      | not (asExpected nm r) = "FAIL"
+      | otherwise = case r of
+          Exact     -> "ok  "
+          Looser _  -> "ok~ "
+          Refused _ -> "ok- "
+          Broken _  -> "FAIL"
+
+    note Exact        = ""
+    note (Looser ls)  = "  (tighter dependencies at " ++ commas ls ++ ")"
+    note (Refused m)  = "\n          " ++ m
+    note (Broken m)   = "\n          " ++ m
+
+    isExact   Exact       = True
+    isExact   _           = False
+    isLooser  (Looser _)  = True
+    isLooser  _           = False
+    isRefused (Refused _) = True
+    isRefused _           = False
+    isBroken  (Broken _)  = True
+    isBroken  _           = False
+
+roundTrip :: String -> RT
+roundTrip txt =
+  case parsePipeProof txt of
+    Left e -> Broken ("did not parse: " ++ oneLine e)
+    Right prf ->
+      case lemmonToFitch prf of
+        -- Not oneLine: these messages explain an obstruction and run to two
+        -- hundred characters or so. Truncating them at 110 cut the
+        -- explanation off mid-sentence and, worse, cut off the very words
+        -- expectedRefusals matches on -- so a correct refusal read as a
+        -- failure. The check was wrong, not the translation.
+        Left e   -> Refused (renderTranslationError e)
+        Right fp -> compareProofs prf (fitchToLemmon fp)
+
+compareProofs :: Proof -> Proof -> RT
+compareProofs a b
+  | map lineNumber a /= map lineNumber b =
+      Broken ("line numbers changed: " ++ show (map lineNumber a)
+              ++ " -> " ++ show (map lineNumber b))
+  | Just n <- firstDiff formula =
+      Broken ("formula changed at line " ++ show n)
+  | Just n <- firstDiff justification =
+      Broken ("justification changed at line " ++ show n)
+  | not (null grew) =
+      Broken ("dependencies grew at " ++ commas grew)
+  | null shrank = Exact
+  | otherwise   = Looser shrank
+  where
+    pairs = zip a b
+    firstDiff f = case [ lineNumber x | (x, y) <- pairs, f x /= f y ] of
+                    (n:_) -> Just n
+                    []    -> Nothing
+    grew   = [ lineNumber x | (x, y) <- pairs
+             , not (references y `S.isSubsetOf` references x) ]
+    shrank = [ lineNumber x | (x, y) <- pairs, references x /= references y ]
 
 runGroup :: (String, [Case]) -> IO (Int, Int)
 runGroup (rule, cs) = do

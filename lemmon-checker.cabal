@@ -15,6 +15,8 @@ library
       PrettyPrint
       FormulaParser
       PipeParse
+      FitchTypes
+      FitchConvert
       ModelSemantics
       Normalize
       TruthTable
@@ -100,6 +102,16 @@ executable web
     , blaze-markup
   default-language:    Haskell2010
 
+executable fitch
+  main-is:             Fitch.hs
+  hs-source-dirs:      app
+  ghc-options:         -Wall
+  build-depends:
+      base >=4.7 && <5
+    , containers
+    , lemmon-checker
+  default-language:    Haskell2010
+
 executable eval-score
   main-is:             EvalScore.hs
   hs-source-dirs:      app
@@ -126,5 +138,6 @@ test-suite lemmon-checker-test
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
   main-is:             Tests.hs
-  build-depends:       base, lemmon-checker
+  -- containers: the Fitch round-trip pass compares dependency sets
+  build-depends:       base, lemmon-checker, containers
   default-language:    Haskell2010
