@@ -187,6 +187,10 @@ data TranslationError
     -- ^ line, the assumption line it names, which is not open here
   | MissingLine Int
     -- ^ a citation to a line that does not exist
+  | EigenInScope Int String Int
+    -- ^ line, the name generalised upon, the enclosing assumption in which it
+    --   occurs. Lemmon tests arbitrariness against the dependency set; Fitch
+    --   can only test it against scope, which may be larger.
   | PremiseInBox Int Int
     -- ^ line, the innermost open assumption. An assumption that is never
     --   discharged is a premise, and a premise must sit at the outermost
@@ -216,6 +220,12 @@ renderTranslationError e =
       ++ ", which is not an open assumption at that point."
     MissingLine n ->
       "Citation to line " ++ show n ++ ", which does not appear in the proof."
+    EigenInScope l c a ->
+      "Line " ++ show l ++ " generalises on the name " ++ c ++ ", which does "
+      ++ "not occur in any assumption the line depends on -- so Lemmon "
+      ++ "licenses it. But it occurs in assumption " ++ show a ++ ", which is "
+      ++ "in scope here, and Fitch tests arbitrariness against scope. The "
+      ++ "subderivation must be renamed to a fresh name first."
     PremiseInBox l a ->
       "Line " ++ show l ++ " is an assumption that is never discharged, so in "
       ++ "Fitch it is a premise -- but it is written inside the subproof "
@@ -263,6 +273,29 @@ lemmonToFitchDirect prf = reverse <$> go prf (St [] [] M.empty M.empty)
     known :: S.Set Int
     known = S.fromList (map lineNumber prf)
 
+    byNum :: M.Map Int ProofLine
+    byNum = M.fromList [ (l, ln) | ln <- prf, let l = lineNumber ln ]
+
+    -- The eigenvariable condition, tested the way Fitch has to test it.
+    --
+    -- The names generalised upon are those occurring in the cited formula and
+    -- not in the conclusion: abstraction replaces every occurrence, so a name
+    -- that is generalised cannot survive into the goal.
+    checkEigen :: Int -> Int -> PredFormula -> St -> Either TranslationError ()
+    checkEigen n m goal st =
+      case M.lookup m byNum of
+        Nothing  -> Left (MissingLine m)
+        Just src ->
+          let eig = constsInFormula (formula src)
+                      `S.difference` constsInFormula goal
+              bad = [ (c, a)
+                    | (a, af, _) <- stStack st
+                    , c <- S.toList eig
+                    , c `S.member` constsInFormula af ]
+          in case bad of
+               ((c, a) : _) -> Left (EigenInScope n c a)
+               []           -> Right ()
+
     go :: [ProofLine] -> St -> Either TranslationError [FitchItem]
 
     go [] st =
@@ -301,6 +334,9 @@ lemmonToFitchDirect prf = reverse <$> go prf (St [] [] M.empty M.empty)
               pure (emit n (formula l) FPremise scope st)
         _ -> do
           r <- ruleFor n j (stSubs st)
+          case j of
+            ForallIntro m -> checkEigen n m (formula l) st
+            _             -> pure ()
           pure (emit n (formula l) r scope st)
 
       st2 <- closeBoxes n st1
@@ -554,9 +590,97 @@ premisesOf (Deriv f r) =
     DOrE d _ _ b1 _ _ b2 ->
       M.unions [premisesOf d, premisesOf b1, premisesOf b2]
 
+-- | Rename one constant throughout a formula.
+renameConst :: String -> String -> PredFormula -> PredFormula
+renameConst old new = go
+  where
+    t (Const c) | c == old = Const new
+    t x                    = x
+    go (Predicate p ts) = Predicate p (map t ts)
+    go (Boolean b)      = Boolean b
+    go (Not p)          = Not (go p)
+    go (And p q)        = And (go p) (go q)
+    go (Or p q)         = Or (go p) (go q)
+    go (Implies p q)    = Implies (go p) (go q)
+    go (Iff p q)        = Iff (go p) (go q)
+    go (ForAll x p)     = ForAll x (go p)
+    go (Exists x p)     = Exists x (go p)
+
+-- | Rename one constant throughout a derivation, formulas carried by
+-- discharging rules included.
+renameInDeriv :: String -> String -> Deriv -> Deriv
+renameInDeriv old new = goD
+  where
+    rf = renameConst old new
+    goD (Deriv f r) = Deriv (rf f) (goR r)
+    goR r = case r of
+      DAssume i    -> DAssume i
+      DPremise i   -> DPremise i
+      DEqI         -> DEqI
+      DLEM         -> DLEM
+      DDN a        -> DDN (goD a)
+      DAndE a      -> DAndE (goD a)
+      DOrI a       -> DOrI (goD a)
+      DForallE a   -> DForallE (goD a)
+      DForallI a   -> DForallI (goD a)
+      DExistsI a   -> DExistsI (goD a)
+      DQN a        -> DQN (goD a)
+      DMP a b      -> DMP (goD a) (goD b)
+      DMT a b      -> DMT (goD a) (goD b)
+      DAndI a b    -> DAndI (goD a) (goD b)
+      DEqE a b     -> DEqE (goD a) (goD b)
+      DIffI a b    -> DIffI (goD a) (goD b)
+      DIffE a b    -> DIffE (goD a) (goD b)
+      DPropTaut ds -> DPropTaut (map goD ds)
+      DCP i af d   -> DCP i (rf af) (goD d)
+      DRAA i af d  -> DRAA i (rf af) (goD d)
+      DExistsE d i af b -> DExistsE (goD d) i (rf af) (goD b)
+      DOrE d i1 f1 b1 i2 f2 b2 ->
+        DOrE (goD d) i1 (rf f1) (goD b1) i2 (rf f2) (goD b2)
+
+-- | Every formula occurring anywhere in a derivation.
+derivFormulas :: Deriv -> [PredFormula]
+derivFormulas (Deriv f r) = f : case r of
+  DAssume _    -> []
+  DPremise _   -> []
+  DEqI         -> []
+  DLEM         -> []
+  DDN a        -> derivFormulas a
+  DAndE a      -> derivFormulas a
+  DOrI a       -> derivFormulas a
+  DForallE a   -> derivFormulas a
+  DForallI a   -> derivFormulas a
+  DExistsI a   -> derivFormulas a
+  DQN a        -> derivFormulas a
+  DMP a b      -> derivFormulas a ++ derivFormulas b
+  DMT a b      -> derivFormulas a ++ derivFormulas b
+  DAndI a b    -> derivFormulas a ++ derivFormulas b
+  DEqE a b     -> derivFormulas a ++ derivFormulas b
+  DIffI a b    -> derivFormulas a ++ derivFormulas b
+  DIffE a b    -> derivFormulas a ++ derivFormulas b
+  DPropTaut ds -> concatMap derivFormulas ds
+  DCP _ af d   -> af : derivFormulas d
+  DRAA _ af d  -> af : derivFormulas d
+  DExistsE d _ af b -> af : derivFormulas d ++ derivFormulas b
+  DOrE d _ f1 b1 _ f2 b2 ->
+    f1 : f2 : concatMap derivFormulas [d, b1, b2]
+
+constsInDeriv :: Deriv -> S.Set String
+constsInDeriv = S.unions . map constsInFormula . derivFormulas
+
+-- | A constant occurring nowhere yet. Single letters first, so that the
+-- renamed proof still reads like a proof.
+freshConst :: S.Set String -> String
+freshConst used = head [ c | c <- candidates, not (c `S.member` used) ]
+  where
+    candidates = map (: []) ['a' .. 'z']
+              ++ [ c : show i | i <- [(1 :: Int) ..], c <- ['a' .. 'z'] ]
+
 data LinSt = LinSt
-  { lsNext :: Int                -- ^ next free line number
-  , lsEnv  :: M.Map Int Int      -- ^ assumption or premise id to its line
+  { lsNext  :: Int                -- ^ next free line number
+  , lsEnv   :: M.Map Int Int      -- ^ assumption or premise id to its line
+  , lsScope :: [PredFormula]      -- ^ assumptions of the enclosing subproofs
+  , lsUsed  :: S.Set String       -- ^ every constant spoken for
   }
 
 -- | Lay a derivation tree out as a Fitch proof.
@@ -570,7 +694,10 @@ derivationToFitch d =
       ids   = M.keys pm
       env0  = M.fromList (zip ids [1 ..])
       tops  = [ FLine (env0 M.! i) (pm M.! i) FPremise | i <- ids ]
-      st0   = LinSt { lsNext = length ids + 1, lsEnv = env0 }
+      st0   = LinSt { lsNext  = length ids + 1
+                    , lsEnv   = env0
+                    , lsScope = []
+                    , lsUsed  = constsInDeriv d }
       (_, _, body) = emit st0 d
   in tops ++ body
 
@@ -589,7 +716,20 @@ emit st (Deriv f r) =
     DAndE a    -> un a FAndE
     DOrI a     -> un a FOrI
     DForallE a -> un a FForallE
-    DForallI a -> un a FForallI
+    -- The one rule whose side condition is about assumptions rather than
+    -- formulas. Lemmon tests arbitrariness against the dependency set, Fitch
+    -- against scope; where a name generalised upon occurs in an assumption
+    -- that encloses this line without being depended on, the Fitch condition
+    -- fails though the Lemmon one held. The repair is local: rename the
+    -- subderivation to a name occurring nowhere. Its open assumptions do not
+    -- contain the old name -- that is what the Lemmon condition says -- so
+    -- they are untouched, and the conclusion does not contain it either,
+    -- since abstraction removes every occurrence.
+    DForallI a ->
+      let (stR, a') = fixEigen st f a
+          (st1, n1, i1) = emit stR a'
+          (st2, n)      = fresh st1
+      in (st2, n, i1 ++ [FLine n f (FForallI n1)])
     DExistsI a -> un a FExistsI
     DQN a      -> un a FQN
     DMP a b    -> bin a b FMP
@@ -639,6 +779,21 @@ emit st (Deriv f r) =
           (st2, n)       = fresh st1
       in (st2, n, isb ++ [FLine n f (mk sr)])
 
+-- | Rename away any name generalised upon that occurs in an enclosing
+-- assumption. Returns the state with the fresh names reserved.
+fixEigen :: LinSt -> PredFormula -> Deriv -> (LinSt, Deriv)
+fixEigen st goal d = foldl step (st, d) bad
+  where
+    -- Abstraction replaces every occurrence, so a name that was generalised
+    -- cannot survive into the goal: the difference is exactly the
+    -- eigenvariables.
+    eig = constsInFormula (dForm d) `S.difference` constsInFormula goal
+    bad = [ c | c <- S.toList eig
+              , any (S.member c . constsInFormula) (lsScope st) ]
+    step (s, dd) c =
+      let nu = freshConst (lsUsed s)
+      in (s { lsUsed = S.insert nu (lsUsed s) }, renameInDeriv c nu dd)
+
 emitMany :: LinSt -> [Deriv] -> (LinSt, [Int], [[FitchItem]])
 emitMany st []       = (st, [], [])
 emitMany st (d : ds) =
@@ -655,8 +810,11 @@ emitMany st (d : ds) =
 mkBox :: LinSt -> Int -> PredFormula -> Deriv -> (LinSt, SubRef, [FitchItem])
 mkBox st a af body =
   let (st1, aLine)     = fresh st
-      st2              = st1 { lsEnv = M.insert a aLine (lsEnv st1) }
-      (st3, nc, items) = emit st2 body
+      st2              = st1 { lsEnv   = M.insert a aLine (lsEnv st1)
+                             , lsScope = af : lsScope st1 }
+      (st3', nc, items) = emit st2 body
+      -- Leaving the subproof: its assumption is no longer in scope.
+      st3               = st3' { lsScope = lsScope st1 }
   in if null items && nc /= aLine
        then let (st4, rl) = fresh st3
                 items'    = [FLine rl (dForm body) (FReit nc)]

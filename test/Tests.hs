@@ -341,6 +341,20 @@ suite =
               , "2|2|Q|A"
               , "2|3|P→Q|1,2 CP" ]) Valid
 
+        -- The eigenvariable counterexample. Line 4 generalises on "a", which
+        -- occurs in no assumption it depends on -- Gamma(4) = {1}, and line 1
+        -- is a-free -- so Lemmon licenses it. But it is written inside the box
+        -- assuming F(a), and Fitch tests arbitrariness against scope. The
+        -- direct route must refuse; the tree route renames the subderivation
+        -- to a fresh name and succeeds.
+      , Case "generalises on a name that an enclosing assumption mentions"
+          (pf [ "1|1|∀xG(x)|A"
+              , "2|2|F(a)|A"
+              , "1|3|G(a)|1 ∀E"
+              , "1|4|∀yG(y)|3 ∀I"
+              , "1,2|5|F(a)∧∀yG(y)|2,4 ∧I"
+              , "1|6|F(a)→(F(a)∧∀yG(y))|2,5 CP" ]) Valid
+
       , Case "uses a line that outlived its box"
           (pf [ "1|1|P|A"
               , "2|2|Q|A"
@@ -370,6 +384,7 @@ expectedUnfolds =
     -- eval/truth/ still translates directly -- but the corpus case is a fair
     -- reminder that Lemmon imposes no such ordering.
   , "reductio discharges the assumption it refutes"
+  , "generalises on a name that an enclosing assumption mentions"
   ]
 
 --------------------------------------------------------------------------------

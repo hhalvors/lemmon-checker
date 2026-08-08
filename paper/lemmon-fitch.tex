@@ -35,6 +35,7 @@
 \newtheorem{theorem}{Theorem}
 \newtheorem{proposition}[theorem]{Proposition}
 \newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{lemma}[theorem]{Lemma}
 \newtheorem{conjecture}[theorem]{Conjecture}
 \theoremstyle{definition}
 \newtheorem{definition}[theorem]{Definition}
@@ -82,12 +83,18 @@ whatever, Fitch permits citation only along the paths its nesting of subproofs
 allows. The obstructions arise exactly when no such nesting accommodates the
 sharing the source proof uses, and they dissolve on unfolding, since a graph
 without sharing is a tree and a tree constrains nothing. We give a
-construction translating any Lemmon proof by way of its unfolding, and
-conjecture that it is total. The construction is implemented, and its output
-has been machine-checked on a corpus of regression cases together with sixteen
-proofs photographed from student work; we set out precisely what remains to be
-proved, and identify one place---the side condition on universal
-introduction---where the two systems may not agree.
+construction translating any Lemmon proof by way of its unfolding, and then
+show that it fails, at exactly one rule. Universal introduction imposes its
+side condition on the assumptions a line rests on; Lemmon can state that
+exactly and Fitch can state it only about scope, and where the two diverge the
+translated proof is incorrect. We exhibit such a proof. The repair is local
+and does not move anything: the Lemmon side condition says exactly what is
+required to license a substitution, so the offending subderivation may be
+renamed to a name occurring nowhere else, whereupon the Fitch condition is
+satisfied too. We conjecture that the construction so modified is total, and
+identify what a proof of it would need. The construction is implemented, and
+its output machine-checked against a regression corpus and sixteen proofs
+photographed from student work.
 \end{abstract}
 
 \section{Introduction}
@@ -124,6 +131,16 @@ translation from Lemmon to Fitch must therefore invent positional information
 that the source does not contain, and it is possible for the source to place
 demands that no such invention can satisfy.
 
+A third observation is the paper's main negative result, and we did not
+anticipate it. Of the twenty-one rules, exactly one imposes a condition not on
+the formulas involved but on the assumptions a line rests on: universal
+introduction, whose eigenvariable must be arbitrary. Lemmon can state that
+condition exactly. Fitch cannot---it has no record of what a line rests on,
+only of what encloses it---and must state the condition about scope instead.
+Since scope may properly include the dependency set, the two conditions come
+apart, and a correct Lemmon proof may translate to a Fitch proof that breaks
+its own rule. Section~\ref{sec:trees} exhibits one.
+
 We work throughout with the rules of \emph{How Logic Works}
 \cite{halvorson2020}, a Lemmon-style system with twenty-one rules, and with a
 Fitch system chosen to match it rule for rule. Section~\ref{sec:systems} fixes
@@ -133,9 +150,9 @@ Section~\ref{sec:obstructions} exhibits the two obstructions to a positional
 translation in the other direction. Section~\ref{sec:trees} introduces the
 graph-theoretic vocabulary needed to say what the obstructions have in common,
 locates the difference between the notations in how each constrains the
-sharing of lines, and gives the construction that translates by unfolding.
-Section~\ref{sec:open} states what remains to be proved, and three questions we
-have not settled. Section~\ref{sec:machine} reports the machine verification, and
+sharing of lines, gives the construction that translates by unfolding, and
+refutes it. Section~\ref{sec:open} states what a proof of the repaired
+construction would require, and two questions we have not settled. Section~\ref{sec:machine} reports the machine verification, and
 Section~\ref{sec:equivalence} draws the moral.
 
 \section{The two systems}\label{sec:systems}
@@ -556,25 +573,119 @@ and thereafter, for each node, the subderivations its rule requires followed
 by the line applying it, opening a subproof at each discharge.
 \end{definition}
 
+\begin{theorem}\label{thm:refuted}
+The construction of Definition~\ref{def:construction} does not always yield a
+correct Fitch proof.
+\end{theorem}
+
+\begin{proof}
+Consider
+
+\begin{lemmonproof}
+\dep{1}   & (1) & $\forall x\, G(x)$ & A \\
+\dep{2}   & (2) & $F(a)$             & A \\
+\dep{1}   & (3) & $G(a)$             & 1 $\forall$E \\
+\dep{1}   & (4) & $\forall y\, G(y)$ & 3 $\forall$I \\
+\dep{1,2} & (5) & $F(a) \wedge \forall y\, G(y)$ & 2,4 $\wedge$I \\
+\dep{1}   & (6) & $F(a) \to (F(a) \wedge \forall y\, G(y))$ & 2,5 CP \\
+\end{lemmonproof}
+
+\noindent which is correct. Line (4) generalises on $a$, and $\Gamma(4) =
+\{1\}$; the sole assumption in that set has formula $\forall x\, G(x)$, in
+which $a$ does not occur. The Lemmon side condition is satisfied.
+
+The construction returns
+
+\begin{fitchproof}
+1 &                 $\forall x\, G(x)$ & Premise \\
+2 & \fbar           $F(a)$             & Assume \\
+3 & \fbar           $G(a)$             & $\forall$E 1 \\
+4 & \fbar           $\forall y\, G(y)$ & $\forall$I 3 \\
+5 & \fbar           $F(a) \wedge \forall y\, G(y)$ & $\wedge$I 2,4 \\
+6 &                 $F(a) \to (F(a) \wedge \forall y\, G(y))$ & CP 2--5 \\
+\end{fitchproof}
+
+\noindent in which line 4 applies universal introduction on $a$ while $F(a)$
+stands as an undischarged assumption in its scope. That is contrary to the
+side condition, so the proof is not correct.
+\end{proof}
+
+It is worth being clear that this is not an artefact of the Fitch system we
+chose in Section~\ref{sec:systems}. One might think to repair matters by
+restating Fitch's side condition against the assumptions a line
+\emph{depends on} rather than those in scope. But a Fitch line does not
+record what it depends on; that is precisely the difference between the two
+notations, and the reason the dependency column of a Lemmon proof, though
+redundant in the sense of Proposition~\ref{prop:redundant}, is not idle.
+Fitch must state its eigenvariable condition against scope, because scope is
+the only thing it has. The failure is therefore a genuine one: at this rule,
+Fitch's coarser bookkeeping is not merely less informative but licenses
+strictly less.
+
+Nothing is lost in the way of provability. The sequent above is Fitch-provable
+by other means, and the two systems remain equivalent in the sense of proving
+the same sequents. What fails is the structure-preserving translation.
+
+There are two ways to repair it. One is to move the offending line: emit each
+line at the depth of the innermost assumption in its dependency set, so that
+scope and dependency coincide, and the two side conditions with them. That
+would work, but it requires the subproofs so induced to nest properly, which
+is Conjecture~\ref{conj:noduplication} below and is not known.
+
+The other is to move nothing and rename instead. It is available because the
+Lemmon side condition says precisely what is needed to license a substitution.
+
+\begin{lemma}[Renaming]\label{lem:rename}
+Let $D$ be a derivation of $\varphi(a)$ whose open assumptions do not contain
+the name $a$, and let $b$ be a name occurring nowhere in $D$. Then $D[b/a]$ is
+a derivation of $\varphi(b)$ from the same open assumptions.
+\end{lemma}
+
+This is the usual substitution lemma for natural deduction, and we do not
+prove it here---though it should be proved for the present rule set. The cases
+needing care are those whose own side conditions mention names: a nested
+universal introduction, whose eigenvariable is untouched when it differs from
+$a$ and is simply renamed when it does not; and existential elimination, whose
+witness must be fresh, a condition that renaming to a globally fresh name
+preserves.
+
+The repair follows. Wherever the construction is about to emit a universal
+introduction whose eigenvariable occurs in an assumption in scope, rename the
+subderivation feeding it to a name occurring nowhere in the proof. Its open
+assumptions are untouched, since by the Lemmon side condition $a$ does not
+occur in them. Its conclusion is untouched, since abstraction removes every
+occurrence of $a$. And the new name occurs in no assumption whatever, so
+\emph{a fortiori} in none in scope. Note that the unfolding shares nothing, so
+renaming within one subderivation cannot disturb any other.
+
+Applied to the proof of Theorem~\ref{thm:refuted}, a single line changes:
+
+\begin{fitchproof}
+1 &                 $\forall x\, G(x)$ & Premise \\
+2 & \fbar           $F(a)$             & Assume \\
+3 & \fbar           $G(b)$             & $\forall$E 1 \\
+4 & \fbar           $\forall y\, G(y)$ & $\forall$I 3 \\
+5 & \fbar           $F(a) \wedge \forall y\, G(y)$ & $\wedge$I 2,4 \\
+6 &                 $F(a) \to (F(a) \wedge \forall y\, G(y))$ & CP 2--5 \\
+\end{fitchproof}
+
+\noindent Line 3 instantiates to $b$ rather than $a$, and line 4 generalises
+on a name that occurs in no assumption anywhere. Nothing else moves.
+
 \begin{conjecture}\label{conj:total}
-The construction of Definition~\ref{def:construction} yields, for every
-correct Lemmon proof, a well-formed and correct Fitch proof with the same
-conclusion, resting on premises drawn from among its own.
+Let the construction of Definition~\ref{def:construction} be modified as
+above, renaming the eigenvariable of a universal introduction whenever it
+occurs in an assumption in scope. So modified, it yields for every correct
+Lemmon proof a well-formed and correct Fitch proof with the same conclusion.
 \end{conjecture}
 
-The reason to expect this is that neither obstruction can arise. A derivation
-is a tree and so carries no linear order for a discharge order to violate: a
-node that discharges closes exactly the subproof its own subtree opened, and
-nesting is automatic. And no node is shared, so no citation crosses from one
-branch to another, and no line can be stranded by the closing of a subproof it
-does not belong to.
-
-That argument is not a proof, and we are careful to claim no more than we
-have. It establishes that the two obstructions of
-Section~\ref{sec:obstructions} do not occur; it does not establish that the
-output satisfies the conditions of Definition~\ref{def:fitch}, nor that each
-rule application in it is correct. Section~\ref{sec:open} sets out what a
-proof would require.
+Two things recommend this repair over the first. It is local: no line moves,
+no subproof changes shape, and the translation remains positional up to the
+renaming of constants. And it is independent of
+Conjecture~\ref{conj:noduplication}, since it raises no question about where
+lines are placed. A proof of Conjecture~\ref{conj:total} therefore requires
+the four lemmas of Section~\ref{sec:open} together with
+Lemma~\ref{lem:rename}, and nothing else that is currently open.
 
 The construction has a cost, which is the cost of unfolding: a line shared $k$
 times is derived $k$ times, and in the worst case the result is exponential in
@@ -619,46 +730,35 @@ Eighteen of these are immediate, the rule being the same rule with a different
 citation convention. Conditional proof, reductio, disjunction elimination and
 existential elimination require checking that the subproof emitted really does
 run from the assumption to the conclusion the Lemmon rule named. Universal
-introduction is the difficulty of the next subsection.
+introduction is where the unmodified construction fails
+(Theorem~\ref{thm:refuted}); for the modified construction the case reduces to
+Lemma~\ref{lem:rename}, which itself wants a proof for this rule set.
 \end{enumerate}
 
-\subsection{The eigenvariable problem}\label{sec:eigen}
+\subsection{Why universal introduction, and no other rule}\label{sec:eigen}
 
-Universal introduction carries a side condition, and the two systems state it
-against different things.
+Theorem~\ref{thm:refuted} turned on universal introduction, and it is worth
+recording why that rule and no other.
 
-In the Lemmon system, $\forall x\varphi(x)$ may be inferred from $\varphi(a)$
-at line $n$ provided the name $a$ occurs in no assumption in $\Gamma(n)$---in
-the assumptions the line \emph{depends on}. In the Fitch system, the same
-inference is permitted provided $a$ occurs in no assumption \emph{in scope}.
-By Proposition~\ref{prop:minimal} the scope may properly include the
-dependency set. The Fitch condition is therefore the stronger of the two.
+Every other rule in the system is a condition on the formulas cited and the
+formula concluded. Universal introduction alone imposes a condition on the
+\emph{assumptions}: $\forall x\varphi(x)$ may be inferred from $\varphi(a)$
+only if $a$ is arbitrary, and arbitrariness is a matter of what the line rests
+on. Lemmon can say this exactly, because a Lemmon line records exactly what it
+rests on. Fitch can only say it about scope. Wherever scope properly includes
+the dependency set---which by Proposition~\ref{prop:minimal} it may---the two
+conditions come apart, and Theorem~\ref{thm:refuted} exhibits a proof where
+they do.
 
-\begin{problem}\label{prob:eigen}
-Let $L$ be a correct Lemmon proof and $F$ its image under
-Definition~\ref{def:construction}. Suppose $L$ applies universal introduction
-at some line, on a name $a$. Must $a$ be absent from every assumption in the
-scope of the corresponding line of $F$?
-\end{problem}
-
-We do not know. Nothing in the construction places a line at the depth of its
-dependencies: a line is emitted inside the subproof opened by a discharge that
-is an ancestor of it in the derivation, and being a descendant of a discharge
-does not require depending on what it discharges. So there is no evident
-reason why the stronger condition should follow from the weaker, and a
-counterexample would show Conjecture~\ref{conj:total} false as stated---not
-merely unproved, since the Fitch proof produced would not be correct.
-
-Two remarks may help whoever takes this up. First, if the answer is negative,
-the natural repair is to place each line at the depth of the innermost
-assumption in its dependency set rather than wherever the traversal puts it,
-which would make scope and dependency coincide and the two side conditions
-agree. Whether that placement is always available is
-Conjecture~\ref{conj:noduplication} below, so the two questions are connected.
-Second, the question is decidable for any given proof, and cheaply: extend the
-well-formedness check of Section~\ref{sec:machine} to test the eigenvariable
-condition against scope, and run it over a corpus. A counterexample, if one
-exists among ordinary proofs, would announce itself.
+That the repair is a renaming rather than a rearrangement is a point in
+favour of the diagnosis. The difficulty is not that the line is in the wrong
+place; it is that the \emph{name} is doing double duty, standing both as the
+arbitrary individual of the generalisation and as the individual the enclosing
+assumption is about. Lemmon can tell those two roles apart because it knows
+which assumptions the line answers to. Fitch cannot, and so a name that is
+arbitrary in the one sense is not visibly arbitrary in the other. Giving the
+generalisation a name of its own removes the ambiguity without touching the
+structure of the proof at all.
 
 \subsection{Two further questions}
 
@@ -679,6 +779,13 @@ innermost assumption in its dependency set therefore places $L$ no deeper than
 $M$, and hence within $M$'s scope. What this argument does not establish is
 that the resulting family of subproofs is laminar, which is what a Fitch proof
 requires, and we have not been able to settle whether it must be.
+
+Neither conjecture is now load-bearing. An earlier version of this paper
+repaired Theorem~\ref{thm:refuted} by placing lines at the depth of their
+dependencies, which made Conjecture~\ref{conj:total} depend on
+Conjecture~\ref{conj:noduplication}; the renaming repair does not, and the two
+questions below are independent curiosities about how economical a translation
+can be, rather than obstacles to its existing.
 
 Some evidence bears on both. Examples~\ref{ex:order} and~\ref{ex:trap}
 translate through the construction to Fitch proofs of five and six lines
@@ -747,8 +854,8 @@ Translation from Fitch to Lemmon is total, canonical, and not injective
 (Theorem~\ref{thm:total}, Corollary~\ref{cor:notinjective}). Translation from
 Lemmon to Fitch is not positional (Theorem~\ref{thm:notpositional}), though we
 conjecture it is total by way of the unfolding
-(Conjecture~\ref{conj:total}, modulo Problem~\ref{prob:eigen} of
-Section~\ref{sec:eigen}). Composing in one order returns the original
+(Conjecture~\ref{conj:total}), the unmodified construction having been refuted
+by Theorem~\ref{thm:refuted} and repaired by renaming. Composing in one order returns the original
 proof; composing in the other returns a normal form. In the vocabulary of
 structural relations between formalisms, Lemmon proofs are a \emph{retract} of
 Fitch proofs, not an isomorphic copy of them.
