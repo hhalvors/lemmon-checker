@@ -27,14 +27,25 @@
 --      is a matter of reordering, and reordering is always available in
 --      principle.
 --
---   2. Scope is coarser than dependency. Fix a nesting a₁ ⊃ a₂ ⊃ a₃ and put
---      each line as deep as its deepest dependency. A line depending on
---      {a₁, a₃} then sits inside a₂'s box, which is legal — it simply does
---      not use a₂ — but when a₂'s box closes, that line goes out of scope
---      even though it never depended on a₂. In Lemmon it survives a₂'s
---      discharge untouched. Where a proof relies on that survival, no
---      nesting order helps and the line must be *derived twice*, once in
---      each box that needs it.
+--   2. Scope is coarser than dependency. A line written between an
+--      assumption and its discharge sits inside that box, and dies when the
+--      box closes — even if it never depended on the assumption. In Lemmon it
+--      survives the discharge untouched, because a Lemmon line's position in
+--      the text has no bearing on what it depends on.
+--
+--      Note what the remedy is, since an earlier draft of this comment got it
+--      wrong. It is not that the line must be derived twice. It is that the
+--      line is in the wrong *place*, and needs hoisting to a box shallow
+--      enough to outlive the discharge. Both obstruction cases in the test
+--      corpus translate through the tree with no growth at all — five lines
+--      to five, six to six — because the tree has no notion of "written
+--      between these two lines" for a line to be caught by.
+--
+--      Whether duplication is ever strictly necessary is open. If L is cited
+--      by M then L's dependencies are among M's, so placing every line at the
+--      depth of its deepest dependency puts it above all of its users, which
+--      suggests it is not. Unfolding a shared line still copies it here; that
+--      is the algorithm being simple, not the notations demanding it.
 --
 -- The second is the real content of the problem, and it is why the general
 -- translation should go through a derivation tree: a Lemmon proof is a DAG,
@@ -51,6 +62,12 @@
 module FitchConvert
   ( fitchToLemmon
   , lemmonToFitch
+  , lemmonToFitchDirect
+  , Route(..)
+  , toDerivation
+  , derivationToFitch
+  , Deriv(..)
+  , DRule(..)
   , TranslationError(..)
   , renderTranslationError
   ) where
@@ -137,6 +154,9 @@ toLemmonRule r =
     FIffI m n              -> IffIntro m n
     FIffE m n              -> IffElim m n
     FQN m                  -> QN m
+    -- Reiteration repeats a line; the repeat follows from it
+    -- tautologically, which is a justification Lemmon does have.
+    FReit m                -> PropTaut [m]
 
 --------------------------------------------------------------------------------
 -- Lemmon to Fitch
@@ -199,8 +219,8 @@ data St = St
 -- the rule that cites it. That distinction matters for disjunction
 -- elimination: its two cases are siblings, and the first must close before
 -- the second is assumed. Closing both at the ∨E line would nest them.
-lemmonToFitch :: Proof -> Either TranslationError FitchProof
-lemmonToFitch prf = reverse <$> go prf (St [] [] M.empty M.empty)
+lemmonToFitchDirect :: Proof -> Either TranslationError FitchProof
+lemmonToFitchDirect prf = reverse <$> go prf (St [] [] M.empty M.empty)
   where
     -- Assumption line to the last line of the box it opens. Assumptions not
     -- in this map are never discharged, and become premises rather than
@@ -347,3 +367,290 @@ lemmonToFitch prf = reverse <$> go prf (St [] [] M.empty M.empty)
               case sort (S.toList (box `S.difference` scope)) of
                 []      -> Right ()
                 (a : _) -> Left (OutOfScope n cited a)
+
+--------------------------------------------------------------------------------
+-- The derivation tree, and the complete translation
+--------------------------------------------------------------------------------
+--
+-- A Lemmon proof is a directed acyclic graph: a line cited by two later lines
+-- is shared between them. A Fitch proof is a tree: every line sits in exactly
+-- one box and is visible only to what that box contains. Unfolding the DAG
+-- into a tree is therefore precisely the step that turns sharing into
+-- duplication -- and it is also what makes both obstructions disappear.
+--
+-- In a tree, a discharge closes exactly the box its own subderivation opened,
+-- so nesting is automatic and there is no discharge order to get wrong. And
+-- nothing is ever cited from a sibling branch, so no line can be stranded in
+-- a box that has closed. The price is that a line used twice is derived
+-- twice, and in the worst case that is exponential.
+--
+-- Hence the two paths. The direct translation is tried first: it is exact,
+-- it preserves line numbers, and on every real proof measured so far it
+-- succeeds. Only when it refuses do we unfold, which costs length and
+-- renumbering but always works.
+
+-- | A natural deduction derivation. Assumptions are leaves, labelled with the
+-- Lemmon line that introduced them; the rule that discharges one names it.
+data Deriv = Deriv
+  { dForm :: PredFormula
+  , dRule :: DRule
+  } deriving (Show, Eq)
+
+data DRule
+  = DAssume Int                     -- ^ discharged by an ancestor
+  | DPremise Int                    -- ^ never discharged
+  | DMP Deriv Deriv
+  | DMT Deriv Deriv
+  | DDN Deriv
+  | DCP Int PredFormula Deriv       -- ^ discharges the named assumption
+  | DAndI Deriv Deriv
+  | DAndE Deriv
+  | DOrI Deriv
+  | DOrE Deriv Int PredFormula Deriv Int PredFormula Deriv
+  | DRAA Int PredFormula Deriv
+  | DForallE Deriv
+  | DForallI Deriv
+  | DExistsI Deriv
+  | DExistsE Deriv Int PredFormula Deriv
+  | DEqI
+  | DEqE Deriv Deriv
+  | DLEM
+  | DPropTaut [Deriv]
+  | DIffI Deriv Deriv
+  | DIffE Deriv Deriv
+  | DQN Deriv
+  deriving (Show, Eq)
+
+-- | Unfold a Lemmon proof into a derivation tree, rooted at its last line.
+--
+-- Lines that do not contribute to the conclusion are dropped: they are not
+-- part of the derivation of it. The resulting Fitch proof establishes the
+-- same formula from the same premises, or fewer.
+toDerivation :: Proof -> Either TranslationError Deriv
+toDerivation prf =
+  case reverse prf of
+    []      -> Left (Internal "cannot translate an empty proof")
+    (l : _) -> build (lineNumber l)
+  where
+    byNum = M.fromList [ (lineNumber l, l) | l <- prf ]
+
+    boxed :: S.Set Int
+    boxed = S.fromList
+      [ a
+      | l <- prf
+      , a <- case justification l of
+               CP a' _            -> [a']
+               RAA a' _           -> [a']
+               ExistsElim _ a' _  -> [a']
+               OrElim _ a1 _ a2 _ -> [a1, a2]
+               _                  -> []
+      ]
+
+    formOf n =
+      case M.lookup n byNum of
+        Nothing -> Left (MissingLine n)
+        Just l  -> Right (formula l)
+
+    build n =
+      case M.lookup n byNum of
+        Nothing -> Left (MissingLine n)
+        Just l  -> do
+          let f = formula l
+              node r = Deriv f r
+          case justification l of
+            Assumption
+              | n `S.member` boxed -> pure (node (DAssume n))
+              | otherwise          -> pure (node (DPremise n))
+            MP m k        -> node <$> (DMP   <$> build m <*> build k)
+            MT m k        -> node <$> (DMT   <$> build m <*> build k)
+            DN m          -> node <$> (DDN   <$> build m)
+            AndIntro m k  -> node <$> (DAndI <$> build m <*> build k)
+            AndElim m     -> node <$> (DAndE <$> build m)
+            OrIntro m     -> node <$> (DOrI  <$> build m)
+            ForallElim m  -> node <$> (DForallE  <$> build m)
+            ForallIntro m -> node <$> (DForallI  <$> build m)
+            ExistsIntro m -> node <$> (DExistsI  <$> build m)
+            EqIntro       -> pure (node DEqI)
+            EqElim m k    -> node <$> (DEqE  <$> build m <*> build k)
+            LEM           -> pure (node DLEM)
+            PropTaut ms   -> node <$> (DPropTaut <$> mapM build ms)
+            IffIntro m k  -> node <$> (DIffI <$> build m <*> build k)
+            IffElim m k   -> node <$> (DIffE <$> build m <*> build k)
+            QN m          -> node <$> (DQN   <$> build m)
+            CP a c        -> do af <- formOf a
+                                cd <- build c
+                                pure (node (DCP a af cd))
+            RAA a c       -> do af <- formOf a
+                                cd <- build c
+                                pure (node (DRAA a af cd))
+            ExistsElim m a c -> do md <- build m
+                                   af <- formOf a
+                                   cd <- build c
+                                   pure (node (DExistsE md a af cd))
+            OrElim d a1 c1 a2 c2 -> do dd  <- build d
+                                       f1  <- formOf a1
+                                       c1d <- build c1
+                                       f2  <- formOf a2
+                                       c2d <- build c2
+                                       pure (node (DOrE dd a1 f1 c1d a2 f2 c2d))
+
+-- | Every premise the tree rests on, keyed by the line that introduced it.
+premisesOf :: Deriv -> M.Map Int PredFormula
+premisesOf (Deriv f r) =
+  case r of
+    DPremise i -> M.singleton i f
+    DAssume _  -> M.empty
+    DEqI       -> M.empty
+    DLEM       -> M.empty
+    DDN a      -> premisesOf a
+    DAndE a    -> premisesOf a
+    DOrI a     -> premisesOf a
+    DForallE a -> premisesOf a
+    DForallI a -> premisesOf a
+    DExistsI a -> premisesOf a
+    DQN a      -> premisesOf a
+    DMP a b    -> premisesOf a `M.union` premisesOf b
+    DMT a b    -> premisesOf a `M.union` premisesOf b
+    DAndI a b  -> premisesOf a `M.union` premisesOf b
+    DEqE a b   -> premisesOf a `M.union` premisesOf b
+    DIffI a b  -> premisesOf a `M.union` premisesOf b
+    DIffE a b  -> premisesOf a `M.union` premisesOf b
+    DPropTaut ds        -> M.unions (map premisesOf ds)
+    DCP _ _ d           -> premisesOf d
+    DRAA _ _ d          -> premisesOf d
+    DExistsE d _ _ b    -> premisesOf d `M.union` premisesOf b
+    DOrE d _ _ b1 _ _ b2 ->
+      M.unions [premisesOf d, premisesOf b1, premisesOf b2]
+
+data LinSt = LinSt
+  { lsNext :: Int                -- ^ next free line number
+  , lsEnv  :: M.Map Int Int      -- ^ assumption or premise id to its line
+  }
+
+-- | Lay a derivation tree out as a Fitch proof.
+--
+-- Premises come first, at the top level, each written once however often it
+-- is used. Everything else is emitted in the order Fitch requires: the
+-- subderivations a rule needs, then the line that applies it.
+derivationToFitch :: Deriv -> FitchProof
+derivationToFitch d =
+  let pm    = premisesOf d
+      ids   = M.keys pm
+      env0  = M.fromList (zip ids [1 ..])
+      tops  = [ FLine (env0 M.! i) (pm M.! i) FPremise | i <- ids ]
+      st0   = LinSt { lsNext = length ids + 1, lsEnv = env0 }
+      (_, _, body) = emit st0 d
+  in tops ++ body
+
+fresh :: LinSt -> (LinSt, Int)
+fresh st = (st { lsNext = lsNext st + 1 }, lsNext st)
+
+-- | Emit a derivation, returning the line its conclusion ended up on.
+emit :: LinSt -> Deriv -> (LinSt, Int, [FitchItem])
+emit st (Deriv f r) =
+  case r of
+    DPremise i -> (st, M.findWithDefault 0 i (lsEnv st), [])
+    DAssume  i -> (st, M.findWithDefault 0 i (lsEnv st), [])
+    DEqI       -> leaf FEqI
+    DLEM       -> leaf FLEM
+    DDN a      -> un a FDN
+    DAndE a    -> un a FAndE
+    DOrI a     -> un a FOrI
+    DForallE a -> un a FForallE
+    DForallI a -> un a FForallI
+    DExistsI a -> un a FExistsI
+    DQN a      -> un a FQN
+    DMP a b    -> bin a b FMP
+    DMT a b    -> bin a b FMT
+    DAndI a b  -> bin a b FAndI
+    DEqE a b   -> bin a b FEqE
+    DIffI a b  -> bin a b FIffI
+    DIffE a b  -> bin a b FIffE
+
+    DPropTaut ds ->
+      let (st1, ns, iss) = emitMany st ds
+          (st2, n)       = fresh st1
+      in (st2, n, concat iss ++ [FLine n f (FPropTaut ns)])
+
+    DCP a af body  -> boxRule a af body FCP
+    DRAA a af body -> boxRule a af body FRAA
+
+    DExistsE d0 a af body ->
+      let (st1, n0, i0)  = emit st d0
+          (st2, sr, isb) = mkBox st1 a af body
+          (st3, n)       = fresh st2
+      in (st3, n, i0 ++ isb ++ [FLine n f (FExistsE n0 sr)])
+
+    DOrE d0 a1 f1 b1 a2 f2 b2 ->
+      let (st1, n0, i0)  = emit st d0
+          (st2, s1, is1) = mkBox st1 a1 f1 b1
+          (st3, s2, is2) = mkBox st2 a2 f2 b2
+          (st4, n)       = fresh st3
+      in (st4, n, i0 ++ is1 ++ is2 ++ [FLine n f (FOrE n0 s1 s2)])
+  where
+    leaf rule =
+      let (st1, n) = fresh st in (st1, n, [FLine n f rule])
+
+    un a mk =
+      let (st1, n1, i1) = emit st a
+          (st2, n)      = fresh st1
+      in (st2, n, i1 ++ [FLine n f (mk n1)])
+
+    bin a b mk =
+      let (st1, n1, i1) = emit st a
+          (st2, n2, i2) = emit st1 b
+          (st3, n)      = fresh st2
+      in (st3, n, i1 ++ i2 ++ [FLine n f (mk n1 n2)])
+
+    boxRule a af body mk =
+      let (st1, sr, isb) = mkBox st a af body
+          (st2, n)       = fresh st1
+      in (st2, n, isb ++ [FLine n f (mk sr)])
+
+emitMany :: LinSt -> [Deriv] -> (LinSt, [Int], [[FitchItem]])
+emitMany st []       = (st, [], [])
+emitMany st (d : ds) =
+  let (st1, n, i)   = emit st d
+      (st2, ns, is) = emitMany st1 ds
+  in (st2, n : ns, i : is)
+
+-- | Build one subproof: allocate its assumption line, bind the assumption so
+-- that uses inside refer to it, then emit the body.
+--
+-- If the body concludes with a line from outside the box -- a premise, or an
+-- outer assumption -- the box would contain nothing and cite a line beyond
+-- its own edge. That is what reiteration is for.
+mkBox :: LinSt -> Int -> PredFormula -> Deriv -> (LinSt, SubRef, [FitchItem])
+mkBox st a af body =
+  let (st1, aLine)     = fresh st
+      st2              = st1 { lsEnv = M.insert a aLine (lsEnv st1) }
+      (st3, nc, items) = emit st2 body
+  in if null items && nc /= aLine
+       then let (st4, rl) = fresh st3
+                items'    = [FLine rl (dForm body) (FReit nc)]
+            in (st4, (aLine, rl), [FSub (Subproof aLine af items')])
+       else (st3, (aLine, nc), [FSub (Subproof aLine af items)])
+
+--------------------------------------------------------------------------------
+-- The complete translation
+--------------------------------------------------------------------------------
+
+-- | Which path produced a translation.
+data Route
+  = Direct   -- ^ line for line; numbering and structure preserved
+  | ViaTree  -- ^ unfolded through a derivation tree; renumbered, and lines
+             --   used more than once are derived more than once
+  deriving (Show, Eq)
+
+-- | Translate any valid Lemmon proof into Fitch.
+--
+-- The direct translation is tried first because it is exact. When it refuses,
+-- the proof is unfolded into a derivation tree and laid out from that, which
+-- always succeeds at the cost of length.
+lemmonToFitch :: Proof -> Either TranslationError (Route, FitchProof)
+lemmonToFitch prf =
+  case lemmonToFitchDirect prf of
+    Right fp -> Right (Direct, fp)
+    Left _   -> do
+      d <- toDerivation prf
+      pure (ViaTree, derivationToFitch d)

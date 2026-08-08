@@ -85,6 +85,18 @@ data FitchRule
   | FIffI Int Int
   | FIffE Int Int
   | FQN Int
+  | FReit Int
+    -- ^ Reiteration: repeat a line from an enclosing box inside this one.
+    --
+    -- Lemmon has no such rule and needs none — a line remains available
+    -- wherever its dependencies are met, so there is nothing to repeat. Fitch
+    -- does need it, because a subproof must physically contain the line it
+    -- concludes with. Deriving Q → P from a premise P is the smallest case:
+    -- the box assuming Q has to contain a P before it can be closed.
+    --
+    -- Translating back, reiteration is a propositional consequence of the
+    -- line it repeats, so it becomes PropTaut. That is not a dodge: φ really
+    -- does follow tautologically from φ.
   deriving (Show, Eq)
 
 -- | A proof is a sequence of items; an item is a line or a nested subproof.
@@ -169,6 +181,7 @@ renderRule r =
     FIffI m n       -> "\8596I " ++ refs [m, n]
     FIffE m n       -> "\8596E " ++ refs [m, n]
     FQN m           -> "QN " ++ refs [m]
+    FReit m         -> "R " ++ refs [m]
   where
     refs ns      = intercalate "," (map show ns)
     sub (a, c)   = show a ++ "-" ++ show c

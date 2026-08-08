@@ -21,7 +21,8 @@ module Main where
 import ProofTypes
 import PipeParse    (parsePipeProof)
 import FitchTypes   (renderFitch)
-import FitchConvert (lemmonToFitch, fitchToLemmon, renderTranslationError)
+import FitchConvert (lemmonToFitch, fitchToLemmon, renderTranslationError,
+                     Route(..))
 
 import qualified Data.Set as S
 import           Control.Monad (forM_, unless)
@@ -35,13 +36,27 @@ main = do
     Right prf ->
       case lemmonToFitch prf of
         Left e -> do
-          putStrLn "This proof has no direct Fitch image.\n"
+          putStrLn "This proof could not be translated.\n"
           putStrLn (renderTranslationError e)
           exitFailure
-        Right fp -> do
+        Right (Direct, fp) -> do
           putStr (renderFitch fp)
           putStrLn ""
           report prf (fitchToLemmon fp)
+        Right (ViaTree, fp) -> do
+          putStrLn "(no line-for-line Fitch image; unfolded through a \
+                   \derivation tree, so lines are renumbered and any line \
+                   \used twice is derived twice)\n"
+          putStr (renderFitch fp)
+          putStrLn ""
+          let back = fitchToLemmon fp
+          putStrLn $ "recovered proof has " ++ show (length back)
+                     ++ " lines, from " ++ show (length prf) ++ "."
+          case (lastFormula prf, lastFormula back) of
+            (Just a, Just b)
+              | a == b    -> putStrLn "conclusion unchanged."
+              | otherwise -> putStrLn "CONCLUSION CHANGED -- this is a bug."
+            _             -> putStrLn "one of the proofs is empty."
 
 -- | Compare the original proof with the one recovered through Fitch.
 report :: Proof -> Proof -> IO ()
@@ -69,3 +84,8 @@ report before after = do
   putStrLn "round trip complete."
   where
     showSet s = "{" ++ unwords (map show (S.toList s)) ++ "}"
+
+lastFormula :: Proof -> Maybe PredFormula
+lastFormula p = case reverse p of
+  []      -> Nothing
+  (l : _) -> Just (formula l)

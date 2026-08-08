@@ -21,9 +21,10 @@ module Main where
 import ProofTypes     (Proof, ProofLine(..))
 import PipeParse      (parsePipeProof)
 import LemmonChecker  (checkProof, proofValid, LineReport(..))
-import FitchConvert   (lemmonToFitch, fitchToLemmon, renderTranslationError)
+import FitchConvert   (lemmonToFitch, fitchToLemmon, renderTranslationError,
+                       Route(..))
 import Control.Monad  (forM_)
-import Data.List      (intercalate, isInfixOf)
+import Data.List      (intercalate)
 import qualified Data.Set as S
 import System.Exit    (exitFailure, exitSuccess)
 
@@ -338,16 +339,17 @@ suite =
       ] )
   ]
 
--- | Cases the Fitch translation is expected to refuse, and the word that
--- should appear in its explanation.
+-- | Cases that have no line-for-line Fitch image, and so must go through the
+-- derivation tree.
 --
--- Keeping this list separate from the corpus means a refusal is only
--- acceptable where it was predicted. A proof that starts refusing without
--- being named here is a regression, not a discovery.
-expectedRefusals :: [(String, String)]
-expectedRefusals =
-  [ ("discharges the outer assumption first", "reordered")
-  , ("uses a line that outlived its box",     "second time")
+-- Keeping the list explicit means unfolding is only acceptable where it was
+-- predicted. A proof that starts unfolding without being named here has
+-- silently lost its structure, which is a regression even though the result
+-- is still correct.
+expectedUnfolds :: [String]
+expectedUnfolds =
+  [ "discharges the outer assumption first"
+  , "uses a line that outlived its box"
   ]
 
 --------------------------------------------------------------------------------
@@ -392,6 +394,7 @@ main = do
 data RT
   = Exact
   | Looser [Int]
+  | Unfolded Int Int      -- ^ lines before, lines after
   | Refused String
   | Broken String
 
@@ -409,6 +412,7 @@ fitchPass = do
   putStrLn ""
   putStrLn $ "  " ++ show (n isExact) ++ " exact, "
              ++ show (n isLooser)  ++ " looser, "
+             ++ show (n isUnfolded) ++ " unfolded, "
              ++ show (n isRefused) ++ " refused, "
              ++ show (n isBroken) ++ " broken, out of "
              ++ show (length rs) ++ " valid proofs."
@@ -420,35 +424,43 @@ fitchPass = do
 
     -- A refusal counts as correct behaviour only where it was predicted, and
     -- only when the explanation names the obstruction that was expected.
+    -- The tree route is total, so nothing should refuse at all now. The two
+    -- obstruction cases must come back Unfolded; everything else must come
+    -- back Exact or Looser. A refusal anywhere is a fault.
     asExpected nm r =
-      case (lookup nm expectedRefusals, r) of
-        (Just w,  Refused m) -> w `isInfixOf` m
-        (Just _,  _)         -> False
-        (Nothing, Refused _) -> False
-        (Nothing, Broken _)  -> False
-        (Nothing, _)         -> True
+      case (nm `elem` expectedUnfolds, r) of
+        (True,  Unfolded _ _) -> True
+        (True,  _)            -> False
+        (False, Exact)        -> True
+        (False, Looser _)     -> True
+        (False, _)            -> False
 
     tag nm r
       | not (asExpected nm r) = "FAIL"
       | otherwise = case r of
-          Exact     -> "ok  "
-          Looser _  -> "ok~ "
-          Refused _ -> "ok- "
-          Broken _  -> "FAIL"
+          Exact        -> "ok  "
+          Looser _     -> "ok~ "
+          Unfolded _ _ -> "ok* "
+          Refused _    -> "ok- "
+          Broken _     -> "FAIL"
 
-    note Exact        = ""
-    note (Looser ls)  = "  (tighter dependencies at " ++ commas ls ++ ")"
-    note (Refused m)  = "\n          " ++ m
-    note (Broken m)   = "\n          " ++ m
+    note Exact           = ""
+    note (Looser ls)     = "  (tighter dependencies at " ++ commas ls ++ ")"
+    note (Unfolded a b)  = "  (unfolded through a derivation tree: "
+                           ++ show a ++ " lines -> " ++ show b ++ ")"
+    note (Refused m)     = "\n          " ++ m
+    note (Broken m)      = "\n          " ++ m
 
-    isExact   Exact       = True
-    isExact   _           = False
-    isLooser  (Looser _)  = True
-    isLooser  _           = False
-    isRefused (Refused _) = True
-    isRefused _           = False
-    isBroken  (Broken _)  = True
-    isBroken  _           = False
+    isExact    Exact          = True
+    isExact    _              = False
+    isLooser   (Looser _)     = True
+    isLooser   _              = False
+    isUnfolded (Unfolded _ _) = True
+    isUnfolded _              = False
+    isRefused  (Refused _)    = True
+    isRefused  _              = False
+    isBroken   (Broken _)     = True
+    isBroken   _              = False
 
 roundTrip :: String -> RT
 roundTrip txt =
@@ -461,8 +473,27 @@ roundTrip txt =
         -- explanation off mid-sentence and, worse, cut off the very words
         -- expectedRefusals matches on -- so a correct refusal read as a
         -- failure. The check was wrong, not the translation.
-        Left e   -> Refused (renderTranslationError e)
-        Right fp -> compareProofs prf (fitchToLemmon fp)
+        Left e              -> Refused (renderTranslationError e)
+        Right (Direct, fp)  -> compareProofs prf (fitchToLemmon fp)
+        -- The tree route renumbers and duplicates, so an exact round trip is
+        -- the wrong thing to ask of it. What must hold is that the result is
+        -- a valid proof of the same conclusion.
+        Right (ViaTree, fp) -> checkUnfolded prf (fitchToLemmon fp)
+
+-- | The standard the unfolded translation is held to: the recovered proof
+-- must check out, and must conclude what the original concluded.
+checkUnfolded :: Proof -> Proof -> RT
+checkUnfolded before after
+  | null after = Broken "unfolding produced nothing"
+  | not (proofValid (checkProof after)) =
+      Broken ("unfolded proof does not check: " ++ firstError after)
+  | conclusionOf before /= conclusionOf after =
+      Broken "unfolding changed the conclusion"
+  | otherwise = Unfolded (length before) (length after)
+  where
+    conclusionOf p = case reverse p of
+      []      -> Nothing
+      (l : _) -> Just (formula l)
 
 compareProofs :: Proof -> Proof -> RT
 compareProofs a b
