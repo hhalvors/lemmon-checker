@@ -87,7 +87,27 @@ form#proofForm .row{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}
     <button id="downloadLatex" type="button">Download .tex</button>
   </div>
   <p class="muted small">This appears only when the proof checks as valid.</p>
-</section>  
+</section>
+
+  <section id="fitchBox" class="card hidden">
+    <h3>The same proof in Fitch notation</h3>
+    <p class="hint">
+      Lemmon writes what a line depends on in the left-hand column. Fitch
+      records the same thing geometrically, with nested subproofs. The boxes
+      below were computed from your dependency sets — nothing else in the
+      proof says where they belong.
+    </p>
+    <div class="actions">
+      <button id="showFitch" type="button" class="btn">Show this as a Fitch proof</button>
+    </div>
+    <div id="fitchNote" class="callout hidden"></div>
+    <pre id="fitchOut" class="hidden"></pre>
+    <p class="hint">
+      One direction of this translation is routine and the other is not.
+      Why, and what that says about the two notations:
+      <a href="/paper">Dependency and Scope</a> (PDF).
+    </p>
+  </section>
 
   </main>
 
@@ -98,6 +118,9 @@ form#proofForm .row{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}
   const table     = $('lineTable');
   const tbody     = table.querySelector('tbody');
   const errorBox  = $('errorBox');
+
+  const fitchBox  = $('fitchBox'),  showFitch = $('showFitch'),
+        fitchOut  = $('fitchOut'),  fitchNote = $('fitchNote');
 
   // LaTeX export elements
   const exportBox   = $('exportLatex');
@@ -148,6 +171,7 @@ form#proofForm .row{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}
     setBusy(true);
 
     hideLatexBox(); // always hide before a new check
+    hideFitchBox();
 
     const proof = proofText.value;
 
@@ -176,6 +200,10 @@ form#proofForm .row{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}
       } else {
         hideLatexBox();
       }
+
+      // Offer the Fitch view, but do not fetch it yet: the button is there to
+      // announce that the translation exists.
+      if (r.valid) fitchBox.classList.remove('hidden');
     } catch (err) {
       overall.innerHTML = `<span class="bad">Network error: ${String(err)}</span>`;
     } finally {
@@ -189,6 +217,50 @@ form#proofForm .row{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}
   proofText.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       doCheck(e);
+    }
+  });
+
+  // --- Fitch view ---------------------------------------------------------
+
+  function hideFitchBox(){
+    fitchBox.classList.add('hidden');
+    fitchOut.classList.add('hidden');
+    fitchNote.classList.add('hidden');
+  }
+
+  function say(kind, text){
+    fitchNote.className = 'callout ' + kind;
+    fitchNote.textContent = text;
+  }
+
+  showFitch?.addEventListener('click', async () => {
+    showFitch.disabled = true;
+    try {
+      const res = await fetch('/fitch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: proofText.value
+      });
+      const data = await res.json();
+
+      if (data.status !== 'ok') {
+        say('problem', data.error || data.status.replaceAll('_',' '));
+        fitchOut.classList.add('hidden');
+        return;
+      }
+
+      fitchOut.textContent = data.fitch;
+      fitchOut.classList.remove('hidden');
+
+      // Only the unfolded route has anything to say.
+      if (data.note && data.note.length) say('caution', data.note);
+      else fitchNote.classList.add('hidden');
+
+    } catch (e) {
+      say('problem', 'Network error: ' + String(e));
+      fitchOut.classList.add('hidden');
+    } finally {
+      showFitch.disabled = false;
     }
   });
 

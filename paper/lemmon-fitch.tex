@@ -1,16 +1,35 @@
 % lemmon-fitch.tex
 %
-% First draft. Compile with pdflatex; no packages beyond the AMS bundle, so
-% it should build anywhere. The proof displays are drawn with a small macro
-% defined below rather than with fitch.sty, to keep the source portable; if
-% you would rather use Peter Selinger's fitch.sty for the final version, the
-% displays are all in one place and easy to convert.
+% First draft. Compile with pdflatex. Packages: the AMS bundle, geometry,
+% array, and listings -- all part of a standard TeX distribution. The proof
+% displays are drawn with a small macro defined below rather than with
+% fitch.sty, to keep the source portable; if you would rather use Peter
+% Selinger's fitch.sty for the final version, the displays are all in one
+% place and easy to convert.
+%
+% The Haskell excerpts are quoted from the implementation rather than written
+% for the paper. Where a definition has been shortened, the omission is marked
+% with an ellipsis comment.
 
 \documentclass[11pt]{article}
 
 \usepackage[margin=1.15in]{geometry}
 \usepackage{amsmath,amssymb,amsthm}
 \usepackage{array}
+\usepackage{listings}
+
+\lstset{
+  language=Haskell,
+  basicstyle=\small\ttfamily,
+  keywordstyle=\bfseries,
+  commentstyle=\itshape,
+  columns=fullflexible,
+  showstringspaces=false,
+  xleftmargin=1.5em,
+  aboveskip=1.2em,
+  belowskip=1.2em,
+  morekeywords={data,type,where,case,of,let,in,pure}
+}
 
 \theoremstyle{plain}
 \newtheorem{theorem}{Theorem}
@@ -20,6 +39,7 @@
 \theoremstyle{definition}
 \newtheorem{definition}[theorem]{Definition}
 \newtheorem{example}[theorem]{Example}
+\newtheorem{problem}[theorem]{Problem}
 \theoremstyle{remark}
 \newtheorem{remark}[theorem]{Remark}
 
@@ -50,16 +70,24 @@ is more delicate than that description suggests, and the delicacy is
 instructive. A Lemmon line carries an explicit and exact record of the
 assumptions it rests on; a Fitch line carries no such record, and its
 dependencies are bounded, but not determined, by the subproofs enclosing it.
-We show that translation from Fitch to Lemmon is total and canonical, that the
-dependency column of a Lemmon proof is therefore redundant, and that
-translation in the other direction is total as well---but not
-\emph{positionally}: there are Lemmon proofs whose lines cannot be carried
-over one for one, in order, to any Fitch proof. We exhibit two such proofs,
-identify the two obstructions responsible, and show that both obstructions are
-artefacts of linearisation rather than facts about the two systems: they
-cannot even be stated of the underlying derivation trees. All the results were
-implemented and machine-checked against a corpus of $78$ proofs together with
-sixteen proofs photographed from student work.
+We show that translation from Fitch to Lemmon is total and canonical, and that
+the dependency column of a Lemmon proof is therefore redundant. Translation in
+the other direction is not \emph{positional}: there are Lemmon proofs whose
+lines cannot be carried over one for one, in order, to any Fitch proof. We exhibit two such proofs and
+identify the two obstructions responsible. Both, we argue, are consequences of
+a single structural difference. Each notation presents a derivation---which is
+a tree---as a directed acyclic graph, by writing each line once and citing it
+thereafter; but where Lemmon permits a line to be cited by any later line
+whatever, Fitch permits citation only along the paths its nesting of subproofs
+allows. The obstructions arise exactly when no such nesting accommodates the
+sharing the source proof uses, and they dissolve on unfolding, since a graph
+without sharing is a tree and a tree constrains nothing. We give a
+construction translating any Lemmon proof by way of its unfolding, and
+conjecture that it is total. The construction is implemented, and its output
+has been machine-checked on a corpus of regression cases together with sixteen
+proofs photographed from student work; we set out precisely what remains to be
+proved, and identify one place---the side condition on universal
+introduction---where the two systems may not agree.
 \end{abstract}
 
 \section{Introduction}
@@ -102,10 +130,12 @@ Fitch system chosen to match it rule for rule. Section~\ref{sec:systems} fixes
 notation. Section~\ref{sec:fitch-to-lemmon} treats the easy direction and
 draws from it the redundancy of the dependency column.
 Section~\ref{sec:obstructions} exhibits the two obstructions to a positional
-translation in the other direction. Section~\ref{sec:trees} shows that both
-dissolve when one passes through derivation trees, and that translation is
-consequently total. Section~\ref{sec:open} states two questions we have not
-settled. Section~\ref{sec:machine} reports the machine verification, and
+translation in the other direction. Section~\ref{sec:trees} introduces the
+graph-theoretic vocabulary needed to say what the obstructions have in common,
+locates the difference between the notations in how each constrains the
+sharing of lines, and gives the construction that translates by unfolding.
+Section~\ref{sec:open} states what remains to be proved, and three questions we
+have not settled. Section~\ref{sec:machine} reports the machine verification, and
 Section~\ref{sec:equivalence} draws the moral.
 
 \section{The two systems}\label{sec:systems}
@@ -136,7 +166,31 @@ discharged assumption is removed from the pooled set. Thus in
 \noindent line (4) discharges assumption (2), which accordingly leaves the
 dependency set.
 
-\begin{definition}
+In the implementation a line is a record and a justification an enumeration,
+one constructor per rule. The constructors of the discharging rules are worth
+noticing: each names an assumption line together with a line derived from it.
+
+\begin{lstlisting}
+data ProofLine = ProofLine
+  { lineNumber    :: Int
+  , formula       :: PredFormula
+  , justification :: Justification
+  , references    :: Set Int          -- the dependency set
+  }
+
+data Justification
+  = Assumption
+  | MP Int Int                        -- modus ponens, two lines
+  | AndIntro Int Int
+  | CP Int Int                        -- assumption line, conclusion line
+  | RAA Int Int
+  | OrElim Int Int Int Int Int        -- disjunction, then two such pairs
+  | ExistsElim Int Int Int
+  | ForallIntro Int
+  -- ... fifteen further rules
+\end{lstlisting}
+
+\begin{definition}\label{def:fitch}
 A \emph{Fitch proof} is a finite sequence of \emph{items}, where an item is
 either a line---a number, a formula and a justification---or a
 \emph{subproof}, consisting of an assumption line together with a further
@@ -145,6 +199,33 @@ subproofs containing it. A line may cite another only if the cited line lies
 within its scope, that is, only if every subproof containing the cited line
 also contains the citing line.
 \end{definition}
+
+The corresponding type is mutually recursive, an item being either a line or
+a subproof containing further items. A rule that discharges cites a subproof,
+which is written as the pair of its first and last line---the \verb|SubRef|
+below---and this is exactly the pair that the Lemmon rule already names.
+
+\begin{lstlisting}
+type SubRef = (Int, Int)
+
+data FitchItem
+  = FLine Int PredFormula FitchRule
+  | FSub Subproof
+
+data Subproof = Subproof
+  { subAssumeLine :: Int
+  , subAssumeForm :: PredFormula
+  , subBody       :: [FitchItem]
+  }
+
+data FitchRule
+  = FPremise                          -- never discharged: outermost level
+  | FAssume                           -- opens a subproof
+  | FMP Int Int
+  | FCP SubRef                        -- cites the subproof, not two lines
+  | FOrE Int SubRef SubRef
+  -- ... and so on
+\end{lstlisting}
 
 The same proof in Fitch:
 
@@ -178,6 +259,26 @@ or premise; $\Gamma(n) = \bigcup_{m} \Gamma(m)$ for $m$ ranging over the lines
 cited, if the rule at $n$ discharges nothing; and for a discharging rule,
 the same union with the discharged assumptions removed.
 \end{definition}
+
+The whole of $\delta$'s arithmetic is the following function, which computes
+one line's dependency set given those of the lines before it. The
+discharging cases subtract; every other rule takes the union of what it cites.
+
+\begin{lstlisting}
+depsOf :: Map Int (Set Int) -> FitchRule -> Int -> Set Int
+depsOf deps r self =
+  case r of
+    FPremise               -> singleton self
+    FAssume                -> singleton self
+    FCP  (a, c)            -> delete a (look c)
+    FRAA (a, c)            -> delete a (look c)
+    FOrE d (a1,c1) (a2,c2) ->
+      unions [ look d, delete a1 (look c1), delete a2 (look c2) ]
+    FExistsE m (a, c)      -> look m `union` delete a (look c)
+    _                      -> unions (map look (citedLines (toLemmonRule r)))
+  where
+    look n = findWithDefault empty n deps
+\end{lstlisting}
 
 \begin{theorem}\label{thm:total}
 $\delta$ is total: for every Fitch proof $F$, $\delta(F)$ is a Lemmon proof,
@@ -252,7 +353,16 @@ two proofs of the same thing.
 There are correct Lemmon proofs with no positional Fitch image.
 \end{theorem}
 
-We give two, illustrating two independent obstructions.
+We give two, illustrating two independent obstructions. The implementation
+distinguishes them, and reports which was met and where:
+
+\begin{lstlisting}
+data TranslationError
+  = NotNested    Int Int [Int]   -- line, assumption discharged, boxes open
+  | OutOfScope   Int Int Int     -- line, line cited, box that closed over it
+  | PremiseInBox Int Int         -- line, the box it was written inside
+  -- ...
+\end{lstlisting}
 
 \begin{example}[Discharge order]\label{ex:order}
 \begin{lemmonproof}
@@ -305,54 +415,252 @@ before (2) in Example~\ref{ex:trap} lifts it out of the subproof. Whether
 permutation always suffices is Conjecture~\ref{conj:reorder} below.
 \end{remark}
 
-\section{Derivation trees, and totality}\label{sec:trees}
+\section{Sharing, and two kinds of graph}\label{sec:trees}
 
-Both obstructions concern the linear order of lines. It is therefore natural
-to ask what becomes of them when the linear order is discarded.
+Both obstructions concern the linear order of lines, and it is natural to ask
+what becomes of them when the linear order is set aside. Doing so requires a
+little graph-theoretic vocabulary, which we give in full, since it is not
+universally familiar.
+
+\subsection{Definitions}
 
 \begin{definition}
-A \emph{derivation} is a finite tree. Leaves are assumptions, labelled with an
-identifier; an internal node is labelled with a formula and a rule, and a node
-whose rule discharges is labelled additionally with the identifier of the
-assumption it discharges, which must occur among the leaves of its subtree.
+A \emph{directed graph} consists of a set of \emph{nodes} together with a set
+of ordered pairs of nodes, the \emph{edges}. We write $m \to n$ for an edge
+from $m$ to $n$, and call $m$ a \emph{parent} of $n$. A \emph{path} is a
+sequence of nodes each joined to the next by an edge; a \emph{cycle} is a path
+returning to its starting node.
 \end{definition}
 
-Every Lemmon proof determines a derivation, by unfolding: the derivation of
-the last line is built by recursion, replacing each cited line number by the
-derivation of that line. A line cited twice is thereby copied. Every
-derivation in turn determines a Fitch proof, by a traversal that emits the
-subderivations a rule requires and then the line applying it, opening a
-subproof for each discharge.
+\begin{definition}
+A \emph{directed acyclic graph}, or \emph{DAG}, is a directed graph with no
+cycles. A \emph{rooted tree} is a DAG with a distinguished node, the
+\emph{root}, such that every node other than the root has exactly one parent
+and every node is reachable from the root.
+\end{definition}
 
-\begin{theorem}\label{thm:tree}
-Every correct Lemmon proof has a Fitch image with the same conclusion and
-premises drawn from among its own.
-\end{theorem}
+The difference that matters here is the one in the parent count. In a tree,
+each node hangs from exactly one place. In a DAG, a node may have several
+parents---and when it does, we say the node is \emph{shared}: it does duty in
+more than one context at once, without being written down more than once.
 
-\begin{proof}[Proof sketch]
-Unfold and traverse, as just described. Neither obstruction can arise. A
-derivation has no linear order, so there is no discharge order to violate: a
-node that discharges an assumption closes exactly the subproof its own subtree
-opened, and nesting is automatic. And no node is ever cited from a sibling
-branch, since each occurrence of a line is a distinct subtree, so no line can
-be stranded by the closing of a subproof it does not belong to.
+\begin{definition}
+Let $G$ be a DAG with root $r$. Its \emph{unfolding} is the tree whose nodes
+are the paths from $r$, with the obvious edges. Unfolding replaces each shared
+node by one copy per context in which it is used. The unfolding of a tree is
+itself; the unfolding of a DAG with genuine sharing is strictly larger, and
+may be exponentially so.
+\end{definition}
+
+\subsection{What each notation presents}
+
+The object that both notations record is a \emph{derivation}: a tree whose
+root is the conclusion, whose internal nodes are applications of rules, and
+whose children are the premises those rules require. This is Gentzen's
+natural deduction in its original tree form, and neither Lemmon nor Fitch
+writes it down as a tree. Both write it as a DAG, because both write each line
+once and then refer back to it, which is precisely what sharing is.
+
+\begin{definition}
+The \emph{citation graph} of a Lemmon proof has the lines as nodes, with an
+edge $m \to n$ whenever line $n$ cites line $m$.
+\end{definition}
+
+\begin{proposition}\label{prop:lemmondag}
+The citation graph of a Lemmon proof is a DAG, and every line is available to
+be cited by every later line.
+\end{proposition}
+
+\begin{proof}
+Acyclicity is immediate, since a line may cite only lines with smaller
+numbers. That every earlier line is available is a matter of the notation
+containing no device by which a line could cease to be. Discharging an
+assumption alters the dependency set recorded on a \emph{new} line; it does
+nothing to any line already written.
 \end{proof}
 
-The two obstructions of Section~\ref{sec:obstructions} are therefore not facts
-about Lemmon and Fitch. They are facts about \emph{linearisation}. Both
-notations are ways of writing a derivation down in a line; the difficulties
-arise only in the flattening, and the two notations flatten differently.
+Fitch does have such a device.
 
-The construction has a cost. A line cited twice is derived twice, and in the
-worst case the unfolding is exponential in the size of the source. There is
-also a small point of rule bookkeeping: if a subproof's conclusion is a line
-from outside it---as in deriving $Q \to P$ from the premise $P$---then the
-subproof would contain nothing at all, and Fitch requires a reiteration step
-to bring the line in. Lemmon has no such rule and needs none, and the
-reiterated line is a tautological consequence of the line it repeats, so
-nothing is added to the system.
+\begin{definition}
+The \emph{scope tree} of a Fitch proof has the subproofs as nodes, together
+with a root representing the whole proof, and an edge from each subproof to
+those immediately contained in it. A line \emph{belongs} to the innermost
+subproof containing it. A line $m$ is \emph{visible} to a later line $n$ when
+the node $m$ belongs to lies on the path from the root to the node $n$ belongs
+to.
+\end{definition}
 
-\section{Two open questions}\label{sec:open}
+\begin{proposition}\label{prop:fitchtree}
+The scope tree of a Fitch proof is a rooted tree, and the citation graph of a
+Fitch proof is a DAG in which every edge $m \to n$ has $m$ visible to $n$.
+\end{proposition}
+
+We can now say exactly where the two notations part company, and it is not
+where the slogan ``Lemmon is a graph, Fitch is a tree'' would put it. Both
+present a derivation as a DAG; both share. The difference is that Fitch
+constrains its sharing and Lemmon does not. In a Lemmon proof any line may be
+shared with any later line whatever. In a Fitch proof a line may be shared
+only along the paths its scope tree permits, and once a subproof closes,
+everything belonging to it is permanently unavailable.
+
+\subsection{The translation, restated}
+
+The two obstructions of Section~\ref{sec:obstructions} can now be seen for
+what they are. By Proposition~\ref{prop:fitchtree}, translating a Lemmon proof
+to Fitch means finding a scope tree under which every citation the source
+makes is permitted. Both examples are
+cases where no scope tree does: in Example~\ref{ex:order} because the
+discharges demand incompatible nestings, in Example~\ref{ex:trap} because a
+line is cited after the only subproof it could have belonged to has closed.
+
+When no scope tree suffices, one may unfold. Unfolding removes sharing, and a
+DAG without sharing is a tree; a tree imposes no constraint that could be
+violated, since nothing is shared to be shared wrongly.
+
+A derivation is represented directly as a tree. Where the Lemmon
+justification names line numbers, the derivation names subderivations, and a
+line cited twice becomes two subtrees.
+
+\begin{lstlisting}
+data Deriv = Deriv { dForm :: PredFormula, dRule :: DRule }
+
+data DRule
+  = DAssume Int                      -- discharged by an ancestor
+  | DPremise Int                     -- never discharged
+  | DMP Deriv Deriv
+  | DCP Int PredFormula Deriv        -- discharges the named assumption
+  | DOrE Deriv Int PredFormula Deriv Int PredFormula Deriv
+  -- ...
+\end{lstlisting}
+
+Translation is then two functions and a choice between them. The positional
+translation is attempted first, because it preserves numbering and structure;
+unfolding is the fallback, and the result records which was used.
+
+\begin{lstlisting}
+data Route = Direct | ViaTree
+
+lemmonToFitch :: Proof -> Either TranslationError (Route, FitchProof)
+lemmonToFitch prf =
+  case lemmonToFitchDirect prf of
+    Right fp -> Right (Direct, fp)
+    Left _   -> do d <- toDerivation prf
+                   pure (ViaTree, derivationToFitch d)
+\end{lstlisting}
+
+\begin{definition}[The unfolding translation]\label{def:construction}
+Given a correct Lemmon proof, unfold its citation graph into a derivation
+rooted at the last line. Then traverse the derivation, emitting first the
+premises, at the outermost level and once each however often they are used,
+and thereafter, for each node, the subderivations its rule requires followed
+by the line applying it, opening a subproof at each discharge.
+\end{definition}
+
+\begin{conjecture}\label{conj:total}
+The construction of Definition~\ref{def:construction} yields, for every
+correct Lemmon proof, a well-formed and correct Fitch proof with the same
+conclusion, resting on premises drawn from among its own.
+\end{conjecture}
+
+The reason to expect this is that neither obstruction can arise. A derivation
+is a tree and so carries no linear order for a discharge order to violate: a
+node that discharges closes exactly the subproof its own subtree opened, and
+nesting is automatic. And no node is shared, so no citation crosses from one
+branch to another, and no line can be stranded by the closing of a subproof it
+does not belong to.
+
+That argument is not a proof, and we are careful to claim no more than we
+have. It establishes that the two obstructions of
+Section~\ref{sec:obstructions} do not occur; it does not establish that the
+output satisfies the conditions of Definition~\ref{def:fitch}, nor that each
+rule application in it is correct. Section~\ref{sec:open} sets out what a
+proof would require.
+
+The construction has a cost, which is the cost of unfolding: a line shared $k$
+times is derived $k$ times, and in the worst case the result is exponential in
+the size of the source. There is also a small point of bookkeeping. If a
+subproof's conclusion is a line from outside it---as in deriving $Q \to P$
+from the premise $P$---then the subproof would contain nothing at all, and
+Fitch requires a reiteration step to bring the line in. Lemmon has no such
+rule and needs none, by Proposition~\ref{prop:lemmondag}; and the reiterated
+line is a tautological consequence of the line it repeats, so nothing is added
+to the system.
+
+\section{What remains to be proved}\label{sec:open}
+
+\subsection{Towards the totality conjecture}
+
+A proof of Conjecture~\ref{conj:total} requires four lemmas about the
+construction of Definition~\ref{def:construction}. The first three are
+routine; the fourth is not, for one rule.
+
+\begin{enumerate}
+\item[(L1)] \emph{Unfolding terminates.} A line may cite only lines with
+smaller numbers, so the recursion is well-founded on the line number, and the
+derivation is finite.
+
+\item[(L2)] \emph{Citations precede uses.} By induction on the derivation:
+the traversal emits every subderivation a node requires before the line
+applying it, so every line number a rule cites is smaller than the number of
+the line citing it.
+
+\item[(L3)] \emph{Every citation is in scope.} By induction, using two facts
+about the traversal: premises are emitted at the outermost level before
+anything else, and an assumption is emitted as the first line of its own
+subproof, so that uses of it within that subproof are visible to it. This is
+the lemma that the implementation initially failed---it emitted premises
+wherever the source had written them, which put some inside subproofs---and it
+is therefore the one to state most carefully.
+
+\item[(L4)] \emph{Each rule transfers.} For each of the twenty-one rules: if
+the Lemmon rule licenses $\varphi$ from the lines it cites, the corresponding
+Fitch rule licenses $\varphi$ from the corresponding lines and subproofs.
+Eighteen of these are immediate, the rule being the same rule with a different
+citation convention. Conditional proof, reductio, disjunction elimination and
+existential elimination require checking that the subproof emitted really does
+run from the assumption to the conclusion the Lemmon rule named. Universal
+introduction is the difficulty of the next subsection.
+\end{enumerate}
+
+\subsection{The eigenvariable problem}\label{sec:eigen}
+
+Universal introduction carries a side condition, and the two systems state it
+against different things.
+
+In the Lemmon system, $\forall x\varphi(x)$ may be inferred from $\varphi(a)$
+at line $n$ provided the name $a$ occurs in no assumption in $\Gamma(n)$---in
+the assumptions the line \emph{depends on}. In the Fitch system, the same
+inference is permitted provided $a$ occurs in no assumption \emph{in scope}.
+By Proposition~\ref{prop:minimal} the scope may properly include the
+dependency set. The Fitch condition is therefore the stronger of the two.
+
+\begin{problem}\label{prob:eigen}
+Let $L$ be a correct Lemmon proof and $F$ its image under
+Definition~\ref{def:construction}. Suppose $L$ applies universal introduction
+at some line, on a name $a$. Must $a$ be absent from every assumption in the
+scope of the corresponding line of $F$?
+\end{problem}
+
+We do not know. Nothing in the construction places a line at the depth of its
+dependencies: a line is emitted inside the subproof opened by a discharge that
+is an ancestor of it in the derivation, and being a descendant of a discharge
+does not require depending on what it discharges. So there is no evident
+reason why the stronger condition should follow from the weaker, and a
+counterexample would show Conjecture~\ref{conj:total} false as stated---not
+merely unproved, since the Fitch proof produced would not be correct.
+
+Two remarks may help whoever takes this up. First, if the answer is negative,
+the natural repair is to place each line at the depth of the innermost
+assumption in its dependency set rather than wherever the traversal puts it,
+which would make scope and dependency coincide and the two side conditions
+agree. Whether that placement is always available is
+Conjecture~\ref{conj:noduplication} below, so the two questions are connected.
+Second, the question is decidable for any given proof, and cheaply: extend the
+well-formedness check of Section~\ref{sec:machine} to test the eigenvariable
+condition against scope, and run it over a corpus. A counterexample, if one
+exists among ordinary proofs, would announce itself.
+
+\subsection{Two further questions}
 
 \begin{conjecture}\label{conj:reorder}
 Every correct Lemmon proof can be permuted---preserving the requirement that a
@@ -372,18 +680,20 @@ $M$, and hence within $M$'s scope. What this argument does not establish is
 that the resulting family of subproofs is laminar, which is what a Fitch proof
 requires, and we have not been able to settle whether it must be.
 
-Some evidence bears on both conjectures. Examples~\ref{ex:order}
-and~\ref{ex:trap} translate through derivation trees to Fitch proofs of five
-and six lines respectively---exactly the lengths of the originals. No line was
-duplicated in either case. This is what one would expect if
+Some evidence bears on both. Examples~\ref{ex:order} and~\ref{ex:trap}
+translate through the construction to Fitch proofs of five and six lines
+respectively---exactly the lengths of the originals. No line was duplicated in
+either case. This is what one would expect if
 Conjecture~\ref{conj:noduplication} holds and the unfolding is simply doing
-more work than necessary.
+more work than it needs to.
 
 \section{Machine verification}\label{sec:machine}
 
 The translations in both directions were implemented in Haskell against the
-proof checker for \emph{How Logic Works}, and the following were verified
-mechanically.
+proof checker for \emph{How Logic Works}. What follows is evidence for
+Conjecture~\ref{conj:total}, not a substitute for a proof of it: every item
+below is a statement about particular proofs, and the conjecture is a
+statement about all of them.
 
 Every proof in a regression corpus of $78$ cases was translated, where valid,
 from Lemmon to Fitch and back. Twenty-five admitted a positional translation,
@@ -404,6 +714,29 @@ We record the empirical finding for what it is worth: neither obstruction
 occurred in any student proof. They are not artefacts, as
 Section~\ref{sec:obstructions} shows, but they appear to be rare in practice.
 
+One methodological point deserves recording, because it cost us two false
+negatives. The round trip is a weaker test than it appears. Since $\delta$
+recomputes dependency sets from the rules rather than reading them off the
+page, a Fitch proof that is \emph{malformed}---one violating the conditions in
+Definition~\ref{def:fitch}---may still return the Lemmon proof it came from,
+exactly. Two proofs in the corpus did precisely this, both by placing a
+premise inside a subproof, where its dependency set recomputes correctly while
+the subproof appears to derive the premise from its assumption. Neither was
+detected by the round trip; the first was noticed by looking at the rendered
+output. The remedy is to check the conditions of the notation directly, and
+separately:
+
+\begin{lstlisting}
+-- Conditions the notation imposes, which a round trip cannot detect:
+--   * a premise may occur only at the outermost level;
+--   * a line may cite only what is in scope.
+fitchWellFormed :: FitchProof -> Maybe String
+\end{lstlisting}
+
+\noindent The moral generalises beyond this case. A test that verifies an
+invariant is preserved under translation cannot, by itself, establish that
+either side satisfies the conditions of its own notation.
+
 \section{What kind of equivalence is this?}\label{sec:equivalence}
 
 It is tempting to summarise all of this by saying that Lemmon and Fitch
@@ -412,8 +745,10 @@ suggest that the summary conceals more than it reports.
 
 Translation from Fitch to Lemmon is total, canonical, and not injective
 (Theorem~\ref{thm:total}, Corollary~\ref{cor:notinjective}). Translation from
-Lemmon to Fitch is total (Theorem~\ref{thm:tree}) but not positional
-(Theorem~\ref{thm:notpositional}). Composing in one order returns the original
+Lemmon to Fitch is not positional (Theorem~\ref{thm:notpositional}), though we
+conjecture it is total by way of the unfolding
+(Conjecture~\ref{conj:total}, modulo Problem~\ref{prob:eigen} of
+Section~\ref{sec:eigen}). Composing in one order returns the original
 proof; composing in the other returns a normal form. In the vocabulary of
 structural relations between formalisms, Lemmon proofs are a \emph{retract} of
 Fitch proofs, not an isomorphic copy of them.

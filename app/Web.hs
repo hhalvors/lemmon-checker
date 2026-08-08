@@ -7,6 +7,9 @@ import ProofToLaTeX (proofTableLaTeX, defaultRenderOpts)
 import qualified LemmonChecker                   as LC
 import           ProofTypes
 import           PipeParse                       (parsePipeProof)
+import           FitchTypes                      (renderFitch)
+import           FitchConvert                    (lemmonToFitch, Route(..),
+                                                  renderTranslationError)
 import           PrettyPrint                     (renderFormula)
 import           FormulaParser                   (parseFormula)
 import           ModelSemantics                  (Model, evalClosed)
@@ -624,6 +627,48 @@ main = do
                 , "latex"  .= latex   -- present only when valid
                 ]
 
+
+    -- The same proof, shown in Fitch notation.
+    --
+    -- Two things can come back besides the rendering. "route" says whether the
+    -- proof had a line-for-line image or had to be unfolded through a
+    -- derivation tree; and when the direct route fails the reason is worth
+    -- showing rather than hiding, since the two ways it can fail are exactly
+    -- what the paper at /paper is about.
+    post "/fitch" $ do
+      raw <- body
+      let inputTxt = TL.unpack (TLE.decodeUtf8 (raw :: BL.ByteString))
+      if length (lines inputTxt) > maxProofLines
+        then do
+          status status400
+          json $ object [ "status" .= ("too_many_lines" :: String) ]
+        else case parsePipeProof inputTxt of
+          Left perr -> do
+            status status400
+            json $ object
+              [ "status" .= ("parse_error" :: String), "error" .= perr ]
+          Right proof ->
+            case lemmonToFitch proof of
+              Left e -> do
+                status status400
+                json $ object
+                  [ "status" .= ("untranslatable" :: String)
+                  , "error"  .= renderTranslationError e ]
+              Right (route, fp) ->
+                json $ object
+                  [ "status" .= ("ok" :: String)
+                  , "route"  .= (case route of
+                                   Direct  -> "direct"  :: String
+                                   ViaTree -> "unfolded")
+                  , "fitch"  .= renderFitch fp
+                  , "note"   .= (case route of
+                       Direct  -> "" :: String
+                       ViaTree ->
+                         "This proof has no line-for-line Fitch image, so it \
+                         \was unfolded through a derivation tree: the lines \
+                         \are renumbered, and anything used twice is derived \
+                         \twice. See the paper for why.")
+                  ]
 
     -- Model checking endpoint (JSON)
     post "/model/check" $ do

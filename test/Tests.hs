@@ -23,6 +23,7 @@ import PipeParse      (parsePipeProof)
 import LemmonChecker  (checkProof, proofValid, LineReport(..))
 import FitchConvert   (lemmonToFitch, fitchToLemmon, renderTranslationError,
                        Route(..))
+import FitchTypes     (fitchWellFormed)
 import Control.Monad  (forM_)
 import Data.List      (intercalate)
 import qualified Data.Set as S
@@ -329,6 +330,17 @@ suite =
         -- assumption, and is then used after the box closes. Line 3 depends
         -- only on 1, so in Lemmon it survives the discharge of 2 untouched;
         -- in Fitch it is inside 2's box and dies with it.
+        -- An assumption that is never discharged is a premise, and Fitch
+        -- premises stand at the outermost level. Here one is written between
+        -- another assumption and its discharge, so a positional translation
+        -- would place it inside that box -- where its dependency set still
+        -- recomputes correctly, which is why the round trip alone could not
+        -- detect the fault. Found by looking at the rendered output.
+      , Case "premise written inside a subproof"
+          (pf [ "1|1|P|A"
+              , "2|2|Q|A"
+              , "2|3|P→Q|1,2 CP" ]) Valid
+
       , Case "uses a line that outlived its box"
           (pf [ "1|1|P|A"
               , "2|2|Q|A"
@@ -350,6 +362,14 @@ expectedUnfolds :: [String]
 expectedUnfolds =
   [ "discharges the outer assumption first"
   , "uses a line that outlived its box"
+  , "premise written inside a subproof"
+    -- This one is not adversarial; it is the ordinary reductio case from the
+    -- RAA group. Its premise (line 2) happens to be written after the
+    -- assumption that gets discharged, so it falls inside that box. Real
+    -- proofs state their premises first and do not hit this -- every proof in
+    -- eval/truth/ still translates directly -- but the corpus case is a fair
+    -- reminder that Lemmon imposes no such ordering.
+  , "reductio discharges the assumption it refutes"
   ]
 
 --------------------------------------------------------------------------------
@@ -474,11 +494,19 @@ roundTrip txt =
         -- expectedRefusals matches on -- so a correct refusal read as a
         -- failure. The check was wrong, not the translation.
         Left e              -> Refused (renderTranslationError e)
-        Right (Direct, fp)  -> compareProofs prf (fitchToLemmon fp)
+        -- Well-formedness first. The round trip recomputes dependency sets
+        -- from the rules, so it cannot see a proof that is malformed as
+        -- Fitch -- a premise inside a subproof round trips perfectly while
+        -- claiming the subproof derives the premise from its assumption.
+        Right (Direct, fp)
+          | Just w <- fitchWellFormed fp -> Broken ("malformed Fitch: " ++ w)
+          | otherwise -> compareProofs prf (fitchToLemmon fp)
         -- The tree route renumbers and duplicates, so an exact round trip is
         -- the wrong thing to ask of it. What must hold is that the result is
         -- a valid proof of the same conclusion.
-        Right (ViaTree, fp) -> checkUnfolded prf (fitchToLemmon fp)
+        Right (ViaTree, fp)
+          | Just w <- fitchWellFormed fp -> Broken ("malformed Fitch: " ++ w)
+          | otherwise -> checkUnfolded prf (fitchToLemmon fp)
 
 -- | The standard the unfolded translation is held to: the recovered proof
 -- must check out, and must conclude what the original concluded.

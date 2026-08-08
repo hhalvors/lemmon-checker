@@ -47,11 +47,25 @@
 --      suggests it is not. Unfolding a shared line still copies it here; that
 --      is the algorithm being simple, not the notations demanding it.
 --
--- The second is the real content of the problem, and it is why the general
--- translation should go through a derivation tree: a Lemmon proof is a DAG,
--- in which a line cited twice is shared, while a Fitch proof is a tree, in
--- which every line lives in one place and is visible only to its
--- descendants. Unfolding the DAG is where duplication becomes forced.
+-- Both obstructions come to the same thing, and it is worth stating precisely
+-- rather than by the usual slogan that Lemmon proofs are graphs and Fitch
+-- proofs are trees. That is not right: a Fitch proof shares lines too, since
+-- two lines in one subproof may both cite an earlier line in it.
+--
+-- What is true is this. The object both notations record is a derivation,
+-- which is a tree. Both present it as a directed acyclic graph, by writing
+-- each line once and citing it thereafter -- that is what sharing is. The
+-- difference is in which sharing each permits. Lemmon permits any line to be
+-- cited by any later line whatever: nothing ever goes out of scope, because
+-- discharging alters the dependency set of a new line and touches no line
+-- already written. Fitch permits citation only along the paths its nesting of
+-- subproofs allows, and a line becomes unavailable for good once its subproof
+-- closes.
+--
+-- So translating means finding a nesting that accommodates all the sharing the
+-- source uses. The two obstructions are the two ways no such nesting exists.
+-- Unfolding removes the sharing, and a graph without sharing is a tree, which
+-- constrains nothing -- there is no shared line left to be shared wrongly.
 --
 -- What is implemented here is the direct, non-duplicating translation: it
 -- succeeds on any Lemmon proof whose discharge structure already nests, which
@@ -173,6 +187,11 @@ data TranslationError
     -- ^ line, the assumption line it names, which is not open here
   | MissingLine Int
     -- ^ a citation to a line that does not exist
+  | PremiseInBox Int Int
+    -- ^ line, the innermost open assumption. An assumption that is never
+    --   discharged is a premise, and a premise must sit at the outermost
+    --   level; but Lemmon lets one be written anywhere, including between
+    --   another assumption and its discharge.
   | Internal String
   deriving (Show, Eq)
 
@@ -197,6 +216,12 @@ renderTranslationError e =
       ++ ", which is not an open assumption at that point."
     MissingLine n ->
       "Citation to line " ++ show n ++ ", which does not appear in the proof."
+    PremiseInBox l a ->
+      "Line " ++ show l ++ " is an assumption that is never discharged, so in "
+      ++ "Fitch it is a premise -- but it is written inside the subproof "
+      ++ "opened by assumption " ++ show a ++ ", and a premise must stand at "
+      ++ "the outermost level. The premises have to be gathered at the top, "
+      ++ "which renumbers the proof."
     Internal m -> "Internal error in the translation: " ++ m
 
 -- | Where each line sits: the set of box-opening assumptions enclosing it at
@@ -265,6 +290,13 @@ lemmonToFitchDirect prf = reverse <$> go prf (St [] [] M.empty M.empty)
               pure st { stStack  = (n, formula l, stAcc st) : stStack st
                       , stAcc    = []
                       , stPlaced = M.insert n (S.insert n scope) (stPlaced st) }
+          -- An undischarged assumption is a premise, and Fitch premises live
+          -- at the outermost level only. Writing one here would put it inside
+          -- a box, which recomputes to the right dependency set and is still
+          -- not a Fitch proof: the box would appear to derive the premise
+          -- from its assumption.
+          | not (null (stStack st)) ->
+              Left (PremiseInBox n (head [ a | (a,_,_) <- stStack st ]))
           | otherwise ->
               pure (emit n (formula l) FPremise scope st)
         _ -> do

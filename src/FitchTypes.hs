@@ -46,6 +46,7 @@ module FitchTypes
   , itemFirstLine
   , itemLastLine
   , fitchLineNumbers
+  , fitchWellFormed
   , renderFitch
   , renderRule
   ) where
@@ -53,6 +54,7 @@ module FitchTypes
 import ProofTypes (PredFormula)
 import PrettyPrint (renderFormula)
 import Data.List (intercalate)
+import qualified Data.Set as S
 
 -- | A subproof, cited by the line it assumes and the line it ends on.
 type SubRef = (Int, Int)
@@ -151,6 +153,80 @@ fitchLineNumbers = concatMap go
   where
     go (FLine n _ _) = [n]
     go (FSub s)      = subAssumeLine s : concatMap go (subBody s)
+
+--------------------------------------------------------------------------------
+-- Well-formedness
+--------------------------------------------------------------------------------
+
+-- | Conditions the notation imposes, which a round trip cannot detect.
+--
+-- Translating a Fitch proof back to Lemmon recomputes dependency sets from the
+-- rules, so a malformed Fitch proof can round trip perfectly. A premise
+-- written inside a subproof is the case that prompted this function: its
+-- dependency set comes back correct, while the proof it came back through
+-- claims that the subproof's assumption yields the premise. Two conditions
+-- catch it:
+--
+--   * a premise may occur only at the outermost level;
+--   * a line may cite only what is in scope -- lines at its own level or in
+--     an enclosing one, and subproofs closed at its own level.
+--
+-- Returns the first violation found.
+fitchWellFormed :: FitchProof -> Maybe String
+fitchWellFormed prf = either Just (const Nothing) (walk 0 S.empty prf >> pure ())
+  where
+    -- Returns the visible set after the sequence, at this level.
+    walk :: Int -> S.Set Int -> [FitchItem] -> Either String (S.Set Int)
+    walk _ vis [] = Right vis
+    walk depth vis (FLine n f r : rest) = do
+      case r of
+        FPremise | depth /= 0 ->
+          Left ("line " ++ show n ++ " is marked Premise but sits inside a "
+                ++ "subproof; premises belong at the outermost level")
+        _ -> Right ()
+      mapM_ (inScope n vis) (plainCitations r)
+      _ <- pure f
+      walk depth (S.insert n vis) rest
+    walk depth vis (FSub s : rest) = do
+      let aLine = subAssumeLine s
+      _ <- walk (depth + 1) (S.insert aLine vis) (subBody s)
+      -- The subproof's interior does not become visible outside it; the
+      -- subproof as a whole becomes citable, which the discharge rules do by
+      -- naming its first and last line.
+      walk depth (S.insert aLine (S.insert (subLastLine s) vis)) rest
+
+    inScope n vis m
+      | m `S.member` vis = Right ()
+      | otherwise = Left ("line " ++ show n ++ " cites line " ++ show m
+                          ++ ", which is not in scope there")
+
+    -- Citations made from outside any box being closed. A discharge rule
+    -- names the subproof it closes, and that is legal by definition.
+    plainCitations r =
+      case r of
+        FCP _          -> []
+        FRAA _         -> []
+        FOrE d _ _     -> [d]
+        FExistsE m _   -> [m]
+        FPremise       -> []
+        FAssume        -> []
+        FMP m k        -> [m, k]
+        FMT m k        -> [m, k]
+        FDN m          -> [m]
+        FAndI m k      -> [m, k]
+        FAndE m        -> [m]
+        FOrI m         -> [m]
+        FForallE m     -> [m]
+        FForallI m     -> [m]
+        FExistsI m     -> [m]
+        FEqI           -> []
+        FEqE m k       -> [m, k]
+        FLEM           -> []
+        FPropTaut ms   -> ms
+        FIffI m k      -> [m, k]
+        FIffE m k      -> [m, k]
+        FQN m          -> [m]
+        FReit m        -> [m]
 
 --------------------------------------------------------------------------------
 -- Rendering
