@@ -636,24 +636,80 @@ The other is to move nothing and rename instead. It is available because the
 Lemmon side condition says precisely what is needed to license a substitution.
 
 \begin{lemma}[Renaming]\label{lem:rename}
-Let $D$ be a derivation of $\varphi(a)$ whose open assumptions do not contain
-the name $a$, and let $b$ be a name occurring nowhere in $D$. Then $D[b/a]$ is
-a derivation of $\varphi(b)$ from the same open assumptions.
+Let $D$ be a derivation of $\Gamma \vdash \psi$, and let $b$ be a name
+occurring nowhere in $D$. Then $D[b/a]$ is a derivation of
+$\Gamma[b/a] \vdash \psi[b/a]$.
 \end{lemma}
 
-This is the usual substitution lemma for natural deduction, and we do not
-prove it here---though it should be proved for the present rule set. The cases
-needing care are those whose own side conditions mention names: a nested
-universal introduction, whose eigenvariable is untouched when it differs from
-$a$ and is simply renamed when it does not; and existential elimination, whose
-witness must be fresh, a condition that renaming to a globally fresh name
-preserves.
+\begin{corollary}\label{cor:rename}
+If in addition $a$ does not occur in $\Gamma$, then $\Gamma[b/a] = \Gamma$,
+and so $\Gamma \vdash \psi[b/a]$.
+\end{corollary}
 
-The repair follows. Wherever the construction is about to emit a universal
-introduction whose eigenvariable occurs in an assumption in scope, rename the
-subderivation feeding it to a name occurring nowhere in the proof. Its open
-assumptions are untouched, since by the Lemmon side condition $a$ does not
-occur in them. Its conclusion is untouched, since abstraction removes every
+Lemma~\ref{lem:rename} is an instance of the substitution theorem
+of \cite[Thm.~4.5.14]{halvorson2019}: for a reconstrual $*$ with admissibility
+conditions $\Delta$ for its function symbols, if $\phi \vdash \psi$ then
+$\Delta, \phi^* \vdash \psi^*$. Renaming $a$ to $b$ is the reconstrual sending
+$a = y$ to $b = y$, whose admissibility condition $\exists ! y\,(b = y)$ is a
+theorem and so discharges, leaving $\phi^* \vdash \psi^*$.
+
+That proof does include the case for universal introduction. It is given,
+however, for a system in which generalisation is on a free variable, the side
+condition being that $x$ is not free in $\Gamma$; the step goes through
+because reconstrual preserves free variables, so that $x$ is not free in
+$\Gamma^*$ either.
+
+The system of \cite{halvorson2020} generalises on a name rather than a
+variable, and there the step is not free. Substituting one name for another
+\emph{can} introduce into $\Gamma$ the very name a universal introduction is
+required to avoid---which is precisely what the free-variable lemma rules out
+in the other formulation. The condition that $b$ be fresh is what closes that
+gap, and since it is the step at issue here we give it.
+
+\begin{proof}[Universal introduction]
+Suppose $\Gamma \vdash \forall x\,\psi(x)$ is derived by $\forall$I from
+$\Gamma \vdash \psi(c)$, where by the side condition $c$ occurs neither in
+$\Gamma$ nor in $\psi(x)$, and suppose the result holds for the latter.
+
+If $c \neq a$, then $\psi(c)[b/a] = (\psi[b/a])(c)$, and the inductive
+hypothesis gives $\Gamma[b/a] \vdash (\psi[b/a])(c)$. Universal introduction
+on $c$ applies: $c$ does not occur in $\Gamma[b/a]$, since it did not occur in
+$\Gamma$ and the substitution introduces only $b$, which differs from $c$
+because $b$ occurs nowhere in $D$ while $c$ does; and $c$ does not occur in
+$\psi(x)[b/a]$ for the same reason. So
+$\Gamma[b/a] \vdash \forall x\,(\psi[b/a])(x)$, which is
+$(\forall x\,\psi(x))[b/a]$.
+
+If $c = a$, then $a$ occurs neither in $\Gamma$ nor in $\psi(x)$, so
+$\Gamma[b/a] = \Gamma$ and $\psi(a)[b/a] = \psi(b)$. The inductive hypothesis
+gives $\Gamma \vdash \psi(b)$. Universal introduction on $b$ applies: $b$
+occurs neither in $\Gamma$ nor in $\psi(x)$, since it occurs nowhere in $D$ at
+all. So $\Gamma \vdash \forall x\,\psi(x)$, and since $a$ does not occur in
+$\forall x\,\psi(x)$, this is $(\forall x\,\psi(x))[b/a]$.
+\end{proof}
+
+Existential elimination goes the same way, its witness condition being of the
+same shape; the remaining rules impose no condition on names and follow the
+pattern of the propositional cases.
+
+\begin{remark}\label{rem:freshness}
+The freshness of $b$ is not a convenience, and the contrast with the
+free-variable formulation shows why. There, reconstrual preserves free
+variables, so a universal introduction licensed before the substitution is
+licensed after it. Here, substitution of one name for another can \emph{add} a
+name to $\Gamma$: if $b$ already occurs in $\Gamma$, a universal introduction
+on $b$ somewhere within $D$ may be licensed before the substitution and not
+after, since the substitution places $b$ among the assumptions that
+introduction is required to avoid. It is the second case of the proof above
+that this breaks.
+\end{remark}
+
+The repair follows, by Corollary~\ref{cor:rename}. Wherever the construction
+is about to emit a universal introduction whose eigenvariable occurs in an
+assumption in scope, rename the subderivation feeding it to a name occurring
+nowhere in the proof---nowhere, and not merely nowhere in the subderivation,
+for the reason given in Remark~\ref{rem:freshness}. Its open assumptions are
+untouched, since by the Lemmon side condition $a$ does not occur in them. Its conclusion is untouched, since abstraction removes every
 occurrence of $a$. And the new name occurs in no assumption whatever, so
 \emph{a fortiori} in none in scope. Note that the unfolding shares nothing, so
 renaming within one subderivation cannot disturb any other.
@@ -881,6 +937,11 @@ it cannot.
 Hans Halvorson.
 \emph{How Logic Works: A User's Guide}.
 Princeton University Press, 2020.
+
+\bibitem{halvorson2019}
+Hans Halvorson.
+\emph{The Logic in Philosophy of Science}.
+Cambridge University Press, 2019.
 
 \bibitem{lemmon1965}
 E.~J. Lemmon.
