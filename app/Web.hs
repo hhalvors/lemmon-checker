@@ -812,6 +812,14 @@ main = do
       setHeader "Content-Disposition" "inline; filename=\"proof-template.pdf\""
       file "static/template.pdf"
 
+    -- The theory behind the Lemmon/Fitch translation, for anyone who wants
+    -- to know what the machinery is doing and why one direction is harder
+    -- than the other.
+    get "/paper" $ do
+      setHeader "Content-Type" "application/pdf"
+      setHeader "Content-Disposition" "inline; filename=\"lemmon-fitch.pdf\""
+      file "static/lemmon-fitch.pdf"
+
     -- Whether this process can read its own prompt file.
     --
     -- The deployed container supplies no locale, so GHC fell back to ASCII
