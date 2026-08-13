@@ -41,7 +41,8 @@ import TruthTable
 
 -- Utils & JSON
 import Control.Concurrent                  (threadDelay)
-import Control.Concurrent.MVar             (MVar, newMVar, modifyMVar)
+import Control.Concurrent.MVar             (MVar, newMVar, modifyMVar,
+                                           modifyMVar_, readMVar)
 import Control.Exception                   (try, SomeException, displayException)
 import qualified Network.HTTP.Client       as HC
 import qualified GHC.IO.Encoding           as Enc
@@ -124,6 +125,72 @@ data LimitState = LimitState
   }
 
 newtype Limits = Limits (MVar LimitState)
+
+--------------------------------------------------------------------------------
+-- What the transcription route costs
+--------------------------------------------------------------------------------
+--
+-- Token counts come from the API response rather than from an estimate: every
+-- reply carries a usage block, and reading it is the difference between
+-- knowing what a request cost and guessing. The prices below are the only
+-- guess, and they are a constant that has to be kept current by hand.
+--
+-- This is in memory, so it resets whenever the service restarts. It is meant
+-- for watching a class work through a problem set, not for accounting. The
+-- authoritative figures are in the Anthropic Console.
+
+-- $ per million tokens, Claude Sonnet 5, as of August 2026.
+pricePerMTokIn, pricePerMTokOut :: Double
+pricePerMTokIn  = 2.0
+pricePerMTokOut = 10.0
+
+data Usage = Usage
+  { usCalls   :: Int
+  , usIn      :: Int
+  , usOut     :: Int
+  , usSince   :: UTCTime
+  , usRecent  :: [(UTCTime, Int, Int)]   -- ^ newest first, pruned to eight days
+  }
+
+newtype Meter = Meter (MVar Usage)
+
+meterMVar :: Meter -> MVar Usage
+meterMVar (Meter v) = v
+
+newMeter :: IO Meter
+newMeter = do
+  now <- getCurrentTime
+  Meter <$> newMVar (Usage 0 0 0 now [])
+
+-- | Record one call, and log a line so the history survives a restart in
+-- whatever the host keeps of stdout.
+record :: Meter -> Int -> Int -> IO ()
+record (Meter var) i o = do
+  now <- getCurrentTime
+  modifyMVar_ var $ \u -> pure u
+    { usCalls  = usCalls u + 1
+    , usIn     = usIn u + i
+    , usOut    = usOut u + o
+    -- Pruned by age rather than by count, so that a week's worth is always
+    -- present however busy the week was. At the daily cap this is a few
+    -- thousand triples, which is nothing.
+    , usRecent = (now, i, o)
+               : [ e | e@(t,_,_) <- usRecent u
+                     , diffUTCTime now t < 8 * 86400 ]
+    }
+  putStrLn $ "[usage] in=" ++ show i ++ " out=" ++ show o
+             ++ " est=$" ++ showCost (costOf i o)
+
+-- | Mean tokens per call, for projecting what the daily cap would cost.
+perCallTokens :: Int -> Int -> Int
+perCallTokens total n = if n == 0 then 0 else total `div` n
+
+costOf :: Int -> Int -> Double
+costOf i o = fromIntegral i * pricePerMTokIn  / 1e6
+           + fromIntegral o * pricePerMTokOut / 1e6
+
+showCost :: Double -> String
+showCost c = show (fromIntegral (round (c * 10000) :: Int) / 10000 :: Double)
 
 newLimits :: IO Limits
 newLimits = do
@@ -412,8 +479,21 @@ stage msg = do
   t <- getCurrentTime
   putStrLn ("[transcribe] " ++ takeWhile (/= '.') (drop 11 (show t)) ++ " " ++ msg)
 
-callAnthropic :: String -> T.Text -> T.Text -> String -> IO (Either String String)
-callAnthropic rawKey media b64 promptText = do
+-- | The token counts the API reports for a call, if it reports them.
+usageOf :: A.Value -> Maybe (Int, Int)
+usageOf v =
+  case v of
+    A.Object o ->
+      case KM.lookup "usage" o of
+        Just (A.Object u) ->
+          case (KM.lookup "input_tokens" u, KM.lookup "output_tokens" u) of
+            (Just (A.Number i), Just (A.Number t)) -> Just (round i, round t)
+            _                                      -> Nothing
+        _ -> Nothing
+    _ -> Nothing
+
+callAnthropic :: Meter -> String -> T.Text -> T.Text -> String -> IO (Either String String)
+callAnthropic meter rawKey media b64 promptText = do
   let apiKey = trimKey rawKey
   initReq <- parseRequest "POST https://api.anthropic.com/v1/messages"
   let payload = A.object
@@ -475,7 +555,11 @@ callAnthropic rawKey media b64 promptText = do
           pure (Left ("The transcription service returned HTTP " ++ show code
                       ++ ". " ++ take 200 (L8.unpack bodyL)))
         else case A.decode bodyL of
-               Just v  -> pure (Right (responseText v))
+               Just v  -> do
+                 case usageOf v of
+                   Just (i, o) -> record meter i o
+                   Nothing     -> stage "reply carried no usage block"
+                 pure (Right (responseText v))
                Nothing -> pure (Left "The transcription service sent a reply \
                                      \that could not be read as JSON.")
 
@@ -550,6 +634,8 @@ main = do
 
   -- One limiter for the whole process, shared by every request.
   limits <- newLimits
+  meter  <- newMeter
+  let meterVar = meterMVar meter
 
   scotty port $ do
     -- Simple request logging
@@ -865,6 +951,42 @@ main = do
       setHeader "Content-Disposition" "inline; filename=\"lemmon-fitch.pdf\""
       file "static/lemmon-fitch.pdf"
 
+    -- What the transcription route has spent since this process started.
+    --
+    -- In memory, so a restart clears it; the [usage] lines in the log survive
+    -- longer, and the Anthropic Console is authoritative. This is for watching
+    -- a class work through a problem set.
+    get "/health/usage" $ do
+      Usage n i o since recent <- liftAndCatchIO (readMVar meterVar)
+      now <- liftAndCatchIO getCurrentTime
+      let hours   = realToFrac (diffUTCTime now since) / 3600 :: Double
+          cost    = costOf i o
+          within d = [ e | e@(t,_,_) <- recent, diffUTCTime now t < d * 86400 ]
+          summarise es = object
+            [ "calls" .= length es
+            , "cost"  .= showCost (costOf (sum [ a | (_,a,_) <- es ])
+                                          (sum [ b | (_,_,b) <- es ])) ]
+      json $ object
+        [ "lastDay"        .= summarise (within 1)
+        , "lastWeek"       .= summarise (within 7)
+        , "calls"          .= n
+        , "inputTokens"    .= i
+        , "outputTokens"   .= o
+        , "estimatedCost"  .= showCost cost
+        , "perCall"        .= (if n == 0 then "0" else showCost (cost / fromIntegral n))
+        , "runningSince"   .= show since
+        , "hoursRunning"   .= (fromIntegral (round (hours * 10) :: Int) / 10 :: Double)
+        , "dailyCapCosts"  .= showCost (costOf (perCallTokens i n * globalPerDay)
+                                               (perCallTokens o n * globalPerDay))
+        , "note" .= ("Token counts are reported by the API, not estimated. \
+                     \Costs use prices held as constants in Web.hs and must be \
+                     \kept current by hand; the Anthropic Console is \
+                     \authoritative. Everything here resets when the service \
+                     \restarts, so compare runningSince against the window you \
+                     \are asking about: if the service has been up for less \
+                     \than a week, lastWeek undercounts." :: String)
+        ]
+
     -- Whether this process can read its own prompt file.
     --
     -- The deployed container supplies no locale, so GHC fell back to ASCII
@@ -951,7 +1073,7 @@ main = do
                       liftAndCatchIO $ stage ("prompt read, " ++ show (length promptText)
                                               ++ " chars; image b64 "
                                               ++ show (T.length b64 `div` 1024) ++ " KB")
-                      first <- liftAndCatchIO $ callAnthropic apiKey media b64 promptText
+                      first <- liftAndCatchIO $ callAnthropic meter apiKey media b64 promptText
                       liftAndCatchIO $ stage $ case first of
                         Left e  -> "API call FAILED: "
                                    ++ take 200 (flatten (redact e))
@@ -980,7 +1102,7 @@ main = do
                                        ++ "it. Do not invent content: if a cell "
                                        ++ "really is blank, leave it blank."
                               again <- liftAndCatchIO $
-                                         callAnthropic apiKey media b64 note
+                                         callAnthropic meter apiKey media b64 note
                               pure $ case again of
                                 Right v2 ->
                                   let p2 = pipeRowsOf v2
