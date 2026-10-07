@@ -22,7 +22,13 @@ RUN --mount=type=cache,target=/root/.stack \
     stack build --copy-bins --local-bin-path /app/bin --install-ghc --no-terminal :web
 
 # --- Runtime stage ---
-FROM debian:bullseye-slim
+# bookworm, not bullseye: bullseye's security pool no longer carries the
+# openssl and ca-certificates versions its own index advertises, so
+# `apt-get install ca-certificates` 404s there regardless of what we are
+# building. Only ca-certificates is really wanted -- it is what lets the
+# /transcribe route reach the Anthropic API over TLS -- and openssl comes
+# along as its dependency. libgmp10 and libtinfo6 are already in the base.
+FROM debian:bookworm-slim
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends libgmp10 libtinfo6 ca-certificates && \
     rm -rf /var/lib/apt/lists/*
