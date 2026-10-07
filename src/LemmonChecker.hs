@@ -499,49 +499,81 @@ checkJustification proof line =
               goal         = formula line
               (vars, core) = collectForalls goal
               k            = length vars
+
+              -- rebuild a ∀-prefix from a list of variables
+              prefixForalls :: [String] -> PredFormula -> PredFormula
+              prefixForalls vs f = foldr ForAll f vs
+
+              gammaConsts = freeConstsInAssumptions proof expectedRefs
+
+              -- Generalize the first t variables of the goal's prefix, leaving
+              -- the remaining ∀s standing in the cited line. t = k is the
+              -- ordinary case, where the cited line is quantifier-free at the
+              -- top. t < k is needed when the goal's inner quantifiers are
+              -- already present on the cited line, as in
+              --
+              --     ∀x R(x,b)   ⊢   ∀y ∀x R(x,y)        (t = 1)
+              --
+              -- which generalizes on b alone. ∃ Intro has always allowed the
+              -- analogous leftover-∃ case; this is the ∀ side of it.
+              --
+              -- Each failure carries a priority so that, when no t succeeds,
+              -- the most informative complaint is the one reported rather than
+              -- whichever t happened to be tried last.
+              attempt :: Int -> Either (Int, String) ()
+              attempt t =
+                let tailCore = prefixForalls (drop t vars) core
+                in case inferWitnessConstsK vars tailCore t src of
+                     Nothing ->
+                       Left (0, "❌ ∀ Intro: could not recognize line " ++ show m
+                                ++ " as an instance of the universal goal.")
+                     Just cs ->
+                       let pairs = [ (x,c) | (x,c) <- zip vars cs, c /= "" ]
+
+                           -- (1) Abstraction check: abstract the instance back
+                           absCoreM =
+                             foldM
+                               (\f (x,c) -> abstractConstFree (Const c) (Var x) f)
+                               src
+                               pairs
+
+                           -- (2) Arbitrariness check: no generalized constant in Γ
+                           badConsts = [ c | (_,c) <- pairs, c `Set.member` gammaConsts ]
+
+                       in case absCoreM of
+                            Nothing ->
+                              Left (1, "❌ ∀ Intro: variable-capture risk while abstracting. "
+                                       ++ "Choose different bound variable names (or α-rename).")
+                            Just absCore
+                              | absCore /= tailCore ->
+                                  Left (1, "❌ ∀ Intro: abstraction mismatch. "
+                                           ++ "The goal core is not the result of abstracting the instance.")
+                              | not (null badConsts) ->
+                                  Left (2, "❌ ∀ Intro: constant(s) "
+                                           ++ show badConsts
+                                           ++ " appear in undischarged assumptions "
+                                           ++ show (Set.toList expectedRefs))
+                              | otherwise -> Right ()
+
+              results   = map attempt [k, k-1 .. 1]
+              anySuccess = not (null [ () | Right () <- results ])
+              bestErr   =
+                snd (foldl'
+                       (\best e -> if fst e > fst best then e else best)
+                       (0, "❌ ∀ Intro: could not recognize line " ++ show m
+                           ++ " as an instance of the universal goal.")
+                       [ e | Left e <- results ])
           in
           if k == 0
             then Left $ "❌ ∀ Intro: goal at line "
                      ++ show (lineNumber line) ++ " is not a universal sentence."
-            else
-              case inferWitnessConstsK vars core k src of
-                Nothing ->
-                  Left $ "❌ ∀ Intro: could not recognize line " ++ show m
-                      ++ " as an instance of the universal goal."
-
-                Just cs ->
-                  let pairs = [ (x,c) | (x,c) <- zip vars cs, c /= "" ]
-
-                      -- (1) Abstraction check: abstract the instance back to the core
-                      absCoreM =
-                        foldM
-                          (\f (x,c) -> abstractConstFree (Const c) (Var x) f)
-                          src
-                          pairs
-
-                      -- (2) Arbitrariness check: none of the generalized constants in Γ
-                      gammaConsts = freeConstsInAssumptions proof expectedRefs
-                      badConsts   = [ c | (_,c) <- pairs, c `Set.member` gammaConsts ]
-
-                  in case absCoreM of
-                       Nothing ->
-                         Left $ "❌ ∀ Intro: variable-capture risk while abstracting. "
-                             ++ "Choose different bound variable names (or α-rename)."
-
-                       Just absCore ->
-                         if absCore /= core
-                           then Left $ "❌ ∀ Intro: abstraction mismatch. "
-                                    ++ "The goal core is not the result of abstracting the instance."
-                         else if not (null badConsts)
-                           then Left $ "❌ ∀ Intro: constant(s) "
-                                    ++ show badConsts
-                                    ++ " appear in undischarged assumptions "
-                                    ++ show (Set.toList expectedRefs)
-                         else if actualRefs /= expectedRefs
-                           then Left $ "❌ ∀ Intro: dependencies must match the instance line. "
-                                    ++ "Expected " ++ show (Set.toList expectedRefs)
-                                    ++ ", got "     ++ show (Set.toList actualRefs)
-                         else Right ()          
+            else if not anySuccess
+              then Left bestErr
+            else if actualRefs /= expectedRefs
+              then Left $ "❌ ∀ Intro: dependencies must match the instance line. "
+                       ++ "Expected " ++ show (Set.toList expectedRefs)
+                       ++ ", got "     ++ show (Set.toList actualRefs)
+            else Right ()
 
     -- ForallIntro m ->
     --   case findLine m of
